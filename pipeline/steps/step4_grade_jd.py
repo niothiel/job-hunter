@@ -54,13 +54,13 @@ def build_jd_reasoning_prompt(
 
 ## Source documents (pre-loaded — do NOT read any files)
 
-### Base resume (profile/base-resume/base-resume.md)
+### Base resume (_config/profile/base-resume/base-resume.md)
 
 ```markdown
 {base_resume_content}
 ```
 
-### Full LinkedIn experience (profile/full-experience/full-experience.md)
+### Full LinkedIn experience (_config/profile/full-experience/full-experience.md)
 
 ```markdown
 {linkedin_content}
@@ -142,6 +142,7 @@ def step4_grade_jd_node(state: JobState, config: RunnableConfig) -> dict:
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
+        job_slug=slug, step="grade-jd",
     )
 
     if reasoning_error:
@@ -170,6 +171,7 @@ def step4_grade_jd_node(state: JobState, config: RunnableConfig) -> dict:
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
+        job_slug=slug, step="grade-jd",
     )
 
     if scoring_error:

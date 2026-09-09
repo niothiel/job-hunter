@@ -60,7 +60,7 @@ def build_can_improve_prompt(
 {resume_content}
 ```
 
-### Full LinkedIn experience (profile/full-experience/full-experience.md)
+### Full LinkedIn experience (_config/profile/full-experience/full-experience.md)
 
 ```markdown
 {linkedin_content}
@@ -169,6 +169,7 @@ def step8_optimize_node(state: JobState, config: RunnableConfig) -> dict:
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
+        job_slug=slug, step="optimize",
     )
 
     if error:

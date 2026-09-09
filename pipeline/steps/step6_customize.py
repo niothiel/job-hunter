@@ -35,11 +35,12 @@ def build_customize_prompt(
     base_resume_content: str = "",
     linkedin_content: str = "",
     few_shot_content: str = "",
+    resume_rel_path: str = "",
 ) -> str:
     """Build the resume customization prompt for the customizer model.
 
-    The base resume is pre-copied to drafts/<slug>/[TBD] resume-v{version}.md
-    before this prompt is sent. The agent edits that file in place.
+    The base resume is pre-copied to resume_rel_path (relative to workspace
+    root) before this prompt is sent. The agent edits that file in place.
 
     Source documents (base resume, LinkedIn, few-shot examples) are pre-fed
     into the prompt to eliminate file-read tool calls and prevent the LLM
@@ -58,9 +59,12 @@ def build_customize_prompt(
         if jd_justification:
             jd_grade_section += f" {jd_justification}"
 
+    if not resume_rel_path:
+        resume_rel_path = f"stages/2_drafts/{slug}/[TBD] resume-v{version}.md"
+
     return f"""You are customizing a resume for a specific job.
 
-The base resume has been pre-copied to stages/2_drafts/{slug}/[TBD] resume-v{version}.md. Edit it in place — do NOT create a new file.
+The base resume has been pre-copied to {resume_rel_path}. Edit it in place — do NOT create a new file.
 
 {RESUME_CUSTOMIZATION_PROTOCOL}
 
@@ -90,13 +94,13 @@ Job: {slug}
 
 ## Your task
 
-Customize the resume for this job. All source documents are above — do NOT read any files. The base resume has been pre-copied to stages/2_drafts/{slug}/[TBD] resume-v{version}.md. Edit it in place.
+Customize the resume for this job. All source documents are above — do NOT read any files. The base resume has been pre-copied to {resume_rel_path}. Edit it in place.
 
 Follow the customization protocol strictly — it contains all formatting, ordering, truthfulness, and strategy rules. Pull in experience from the LinkedIn (truthfully — never fabricate). Study the few-shot examples above to learn the desired transformation patterns.
 
-After writing the resume, verify it fits the line budget per the customization protocol (self-measure with `python3 -m pipeline.helpers.count_lines stages/2_drafts/{slug}/[TBD] resume-v{version}.md --json`, self-trim if over 75).
+After writing the resume, verify it fits the line budget per the customization protocol (self-measure with `python3 -m pipeline.helpers.count_lines {resume_rel_path} --json`, self-trim if over 75).
 
-Edit the resume at stages/2_drafts/{slug}/[TBD] resume-v{version}.md in place.
+Edit the resume at {resume_rel_path} in place.
 
 Do NOT output the resume to stdout. Write it to the file."""
 
@@ -110,6 +114,7 @@ def build_optimize_prompt(
     base_resume_content: str = "",
     linkedin_content: str = "",
     current_resume_content: str = "",
+    resume_rel_path: str = "",
 ) -> str:
     """Build the optimization prompt for the customizer model.
 
@@ -133,6 +138,9 @@ def build_optimize_prompt(
     feedback = (
         "\n".join(feedback_lines) if feedback_lines else "No specific gaps identified."
     )
+
+    if not resume_rel_path:
+        resume_rel_path = f"stages/2_drafts/{slug}/[TBD] resume-v{next_version}.md"
 
     return f"""You are improving a customized resume for a specific job.
 
@@ -170,9 +178,9 @@ The grader found these areas to improve:
 
 Improve the resume to address these gaps while staying truthful. All source documents are above — do NOT read any files. Follow the customization protocol strictly — it contains all formatting, ordering, truthfulness, and strategy rules.
 
-After writing the resume, verify it fits the line budget per the customization protocol (self-measure with `python3 -m pipeline.helpers.count_lines <path> --json`, self-trim if over 75).
+After writing the resume, verify it fits the line budget per the customization protocol (self-measure with `python3 -m pipeline.helpers.count_lines {resume_rel_path} --json`, self-trim if over 75).
 
-Write the improved resume to stages/2_drafts/{slug}/[TBD] resume-v{next_version}.md
+Write the improved resume to {resume_rel_path}
 
 Do NOT output the resume to stdout. Write it to the file."""
 
@@ -249,6 +257,7 @@ def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
 
     job_dir = deps.paths.drafts / slug
     resume_path = job_dir / f"[TBD] resume-v{version}.md"
+    resume_rel_path = str(resume_path.relative_to(deps.paths.hunter_dir))
 
     if deps.config.dry_run:
         # Dry run: skip pre-copy and LLM call, just return the version
@@ -276,6 +285,7 @@ def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
         prompt = build_customize_prompt(
             slug, jd_text, version, jd_grade, jd_justification,
             base_resume_content, linkedin_content, few_shot_content,
+            resume_rel_path=resume_rel_path,
         )
     else:
         # Re-entry: optimize with grader feedback
@@ -305,6 +315,7 @@ def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
         prompt = build_optimize_prompt(
             slug, jd_text, current_resume_rel, version, per_criterion,
             base_resume_content, linkedin_content, current_resume_content,
+            resume_rel_path=resume_rel_path,
         )
 
     # Call LLM (customizer model edits/writes the file in place)
@@ -322,6 +333,7 @@ def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         config_path=customizer_config,
+        job_slug=slug, step="customize",
     )
 
     if error:

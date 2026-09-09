@@ -77,6 +77,44 @@ def test_build_customize_prompt_contains_jd():
     assert "8.5" in prompt
 
 
+def test_build_customize_prompt_uses_correct_filesystem_paths():
+    """Prompt must reference the actual filesystem layout, not shorthand.
+
+    The customize prompt tells the LLM where to edit the resume file. If the
+    path doesn't match the real filesystem path (stages/2_drafts/...), the
+    LLM wastes its entire session hunting for the file and times out.
+
+    Regression test for the 'drafts/ vs stages/2_drafts/' bug that caused
+    all 3 customization retries to time out on the Dipp AI job (2026-09-08).
+    """
+    import re
+
+    prompt = build_customize_prompt(
+        "google-eng", "We need Python", 1, jd_grade=8.5,
+        resume_rel_path="stages/2_drafts/google-eng/[TBD] resume-v1.md",
+    )
+    # The resume path in the prompt must use the real stage directory
+    assert "stages/2_drafts/google-eng/[TBD] resume-v1.md" in prompt
+    # Must NOT use the shorthand 'drafts/' as a path prefix (without stages/2_)
+    # Use regex: 'drafts/' not preceded by '2_' is the bug pattern
+    assert re.search(r"(?<!2_)drafts/", prompt) is None, (
+        "Prompt contains 'drafts/' without 'stages/2_' prefix — "
+        "the LLM will look for a non-existent path"
+    )
+    # Source document labels must use _config/profile/ not profile/
+    assert "_config/profile/" in prompt
+    assert "(profile/" not in prompt
+
+
+def test_build_customize_prompt_default_path_uses_stages_prefix():
+    """Even the fallback default path must use stages/2_drafts/, not drafts/."""
+    import re
+
+    prompt = build_customize_prompt("google-eng", "We need Python", 1)
+    assert "stages/2_drafts/google-eng/[TBD] resume-v1.md" in prompt
+    assert re.search(r"(?<!2_)drafts/", prompt) is None
+
+
 # ─── build_optimize_prompt ───────────────────────────────────────────────────
 
 

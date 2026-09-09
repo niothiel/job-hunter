@@ -68,13 +68,13 @@ def build_classification_prompt(
 {resume_content}
 ```
 
-### Base resume (profile/base-resume/base-resume.md)
+### Base resume (_config/profile/base-resume/base-resume.md)
 
 ```markdown
 {base_resume_content}
 ```
 
-### Full LinkedIn experience (profile/full-experience/full-experience.md)
+### Full LinkedIn experience (_config/profile/full-experience/full-experience.md)
 
 ```markdown
 {linkedin_content}
@@ -188,6 +188,7 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         permission_mode="normal",
+        job_slug=slug, step="truthfulness",
     )
 
     if classification_error:
@@ -219,6 +220,7 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         permission_mode="normal",
+        job_slug=slug, step="truthfulness",
     )
 
     if synthesis_error:
