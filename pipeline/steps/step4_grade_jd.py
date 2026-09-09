@@ -138,7 +138,7 @@ def step4_grade_jd_node(state: JobState, config: RunnableConfig) -> dict:
     reasoning_output, reasoning_error = deps.llm(
         reasoning_prompt,
         model=deps.config.models.customizer,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("grade-jd"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
@@ -167,7 +167,7 @@ def step4_grade_jd_node(state: JobState, config: RunnableConfig) -> dict:
     scoring_output, scoring_error = deps.llm(
         scoring_prompt,
         model=deps.config.models.customizer,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("grade-jd"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),

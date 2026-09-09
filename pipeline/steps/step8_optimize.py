@@ -165,7 +165,7 @@ def step8_optimize_node(state: JobState, config: RunnableConfig) -> dict:
     output, error = deps.llm(
         prompt,
         model=deps.config.models.customizer,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("optimize"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),

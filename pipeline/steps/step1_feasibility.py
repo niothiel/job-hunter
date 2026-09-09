@@ -9,7 +9,7 @@ both the enrichments and jobs tables).
 """
 from __future__ import annotations
 
-import logging
+import structlog
 
 from pipeline.infrastructure.config import PipelineConfig
 from pipeline.infrastructure.paths import Paths
@@ -17,7 +17,7 @@ from pipeline.infrastructure.paths import Paths
 
 def step1_feasibility(
     config: PipelineConfig,
-    logger: logging.Logger,
+    logger: structlog.stdlib.BoundLogger,
     store,
     paths: Paths,
     llm=None,
@@ -55,7 +55,7 @@ def step1_feasibility(
 
         prompt = config.feasibility_prompt
         model = config.models.customizer
-        timeout = config.llm_timeout_seconds
+        timeout = config.timeout_for("feasibility")
         checker = DevinCLIChecker(
             llm=llm, model=model, prompt=prompt, timeout=timeout,
             workspace=str(paths.hunter_dir),

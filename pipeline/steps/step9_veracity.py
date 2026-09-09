@@ -183,7 +183,7 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
     classification_output, classification_error = deps.llm(
         classification_prompt,
         model=deps.config.models.truthfulness,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("truthfulness"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
@@ -215,7 +215,7 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
     synthesis_output, synthesis_error = deps.llm(
         synthesis_prompt,
         model=deps.config.models.truthfulness,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("truthfulness"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),

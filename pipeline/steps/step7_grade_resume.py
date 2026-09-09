@@ -163,11 +163,12 @@ def step7_grade_resume_node(state: JobState, config: RunnableConfig) -> dict:
     reasoning_output, reasoning_error = deps.llm(
         reasoning_prompt,
         model=deps.config.models.grader,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("grade-resume"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         permission_mode="normal",
+        job_slug=slug, step="grade-resume",
     )
 
     if reasoning_error:
@@ -201,11 +202,12 @@ def step7_grade_resume_node(state: JobState, config: RunnableConfig) -> dict:
     scoring_output, scoring_error = deps.llm(
         scoring_prompt,
         model=deps.config.models.grader,
-        timeout=deps.config.llm_timeout_seconds,
+        timeout=deps.config.timeout_for("grade-resume"),
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         permission_mode="normal",
+        job_slug=slug, step="grade-resume",
     )
 
     if scoring_error:

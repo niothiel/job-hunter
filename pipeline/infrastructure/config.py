@@ -36,9 +36,21 @@ class PipelineConfig(BaseModel):
     llm_timeout_seconds: int = Field(default=120, ge=10, le=600)
     llm_retries: int = Field(default=2, ge=0, le=5)
     llm_retry_delay: int = Field(default=5, ge=0, le=60)
+    # Per-step timeout overrides (seconds). Keys are step names matching
+    # the `step=` kwarg passed to deps.llm(). Falls back to llm_timeout_seconds.
+    # Example: {"customize": 240, "optimize": 240}
+    llm_timeout_overrides: dict[str, int] = Field(default_factory=dict)
     notifications_enabled: bool = True
     git_push: bool = True
     dry_run: bool = False  # set at runtime, not from config file
+
+    def timeout_for(self, step: str) -> int:
+        """Return the LLM timeout for a given step, with override fallback.
+
+        Usage in step nodes:
+            timeout=deps.config.timeout_for("customize")
+        """
+        return self.llm_timeout_overrides.get(step, self.llm_timeout_seconds)
 
 
 def load_config(config_file: Path) -> PipelineConfig:

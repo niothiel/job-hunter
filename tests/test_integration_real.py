@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -151,15 +152,16 @@ def real_config() -> PipelineConfig:
 
 
 @pytest.fixture
-def real_logger() -> logging.Logger:
+def real_logger() -> structlog.stdlib.BoundLogger:
     """Verbose logger so you can watch progress in -s mode."""
-    log = logging.getLogger("real_integration")
-    log.handlers.clear()
-    log.setLevel(logging.INFO)
+    import structlog
+    stdlib_log = logging.getLogger("real_integration")
+    stdlib_log.handlers.clear()
+    stdlib_log.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("  %(message)s"))
-    log.addHandler(handler)
-    return log
+    stdlib_log.addHandler(handler)
+    return structlog.get_logger("real_integration")
 
 
 def _make_node_config(llm, logger, config, paths, export_dir=None):
@@ -217,6 +219,7 @@ def test_real_customizer(real_paths, real_config, real_logger, tmp_path):
     - A resume file is produced at stages/2_drafts/<slug>/[TBD] resume-v1.md
     - The file is non-empty and contains markdown
     - The file is different from the base resume (was actually customized)
+    - The call completes within the customize step's allotted timeout
     """
     from pipeline.steps.step6_customize import step6_customize_node
 
@@ -230,7 +233,15 @@ def test_real_customizer(real_paths, real_config, real_logger, tmp_path):
         jd_grade=JdGrade(grade=8.5, justification="Strong fit — senior engineering leader."),
     )
 
+    timeout = real_config.timeout_for("customize")
+    start = time.monotonic()
     result = step6_customize_node(state, node_config)
+    elapsed = time.monotonic() - start
+    assert elapsed < timeout, (
+        f"Customizer took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
+        f"the per-step override may not be applied"
+    )
+    real_logger.info(f"  PASS: customizer completed in {elapsed:.1f}s (timeout={timeout}s)")
 
     # Verify state update
     assert "resume_versions" in result
@@ -260,6 +271,7 @@ def test_real_grader(real_paths, real_config, real_logger, tmp_path):
     - The grade is a valid float in [0, 10]
     - .grades.log is appended
     - The resume file is renamed with the score prefix
+    - The call completes within the grade-resume step's allotted timeout
     """
     from pipeline.steps.step7_grade_resume import step7_grade_resume_node
 
@@ -284,7 +296,15 @@ def test_real_grader(real_paths, real_config, real_logger, tmp_path):
         resume_versions=[ResumeVersion(version=1, path=resume_file)],
     )
 
+    timeout = real_config.timeout_for("grade-resume")
+    start = time.monotonic()
     result = step7_grade_resume_node(state, node_config)
+    elapsed = time.monotonic() - start
+    assert elapsed < timeout, (
+        f"Grader took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
+        f"the per-step override may not be applied"
+    )
+    real_logger.info(f"  PASS: grader completed in {elapsed:.1f}s (timeout={timeout}s)")
 
     # Verify state update
     assert "latest_grade" in result
@@ -316,6 +336,7 @@ def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
     - Verification JSON is produced (either .veracity/<slug>/verification.json or parsed from output)
     - The verification.verified field is a boolean
     - If unverified, unverifiable_claims is populated
+    - The call completes within the truthfulness step's allotted timeout
     """
     from pipeline.steps.step9_veracity import step9_veracity_node
 
@@ -348,7 +369,15 @@ def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
         ),
     )
 
+    timeout = real_config.timeout_for("truthfulness")
+    start = time.monotonic()
     result = step9_veracity_node(state, node_config)
+    elapsed = time.monotonic() - start
+    assert elapsed < timeout, (
+        f"Truthfulness took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
+        f"the per-step override may not be applied"
+    )
+    real_logger.info(f"  PASS: truthfulness completed in {elapsed:.1f}s (timeout={timeout}s)")
 
     # Verify state update
     assert "verification" in result
@@ -372,6 +401,7 @@ def test_real_jd_grader(real_paths, real_config, real_logger, tmp_path):
     - The grade is a valid float in [0, 10]
     - The JD file is renamed with the grade prefix
     - Clearance detection works (CLEARANCE response → is_clearance=True)
+    - The call completes within the grade-jd step's allotted timeout
     """
     from pipeline.steps.step4_grade_jd import step4_grade_jd_node
 
@@ -392,7 +422,15 @@ def test_real_jd_grader(real_paths, real_config, real_logger, tmp_path):
         jd_path=jd_file,
     )
 
+    timeout = real_config.timeout_for("grade-jd")
+    start = time.monotonic()
     result = step4_grade_jd_node(state, node_config)
+    elapsed = time.monotonic() - start
+    assert elapsed < timeout, (
+        f"JD grader took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
+        f"the per-step override may not be applied"
+    )
+    real_logger.info(f"  PASS: JD grader completed in {elapsed:.1f}s (timeout={timeout}s)")
 
     # Verify state update
     assert "jd_grade" in result
@@ -417,6 +455,7 @@ def test_real_optimize(real_paths, real_config, real_logger, tmp_path):
     - The LLM is called (not skipped via exit conditions)
     - The response is YES or NO
     - optimize_can_improve is a boolean
+    - The call completes within the optimize step's allotted timeout
     """
     from pipeline.steps.step8_optimize import step8_optimize_node
 
@@ -452,7 +491,15 @@ def test_real_optimize(real_paths, real_config, real_logger, tmp_path):
         optimize_iteration_count=0,
     )
 
+    timeout = real_config.timeout_for("optimize")
+    start = time.monotonic()
     result = step8_optimize_node(state, node_config)
+    elapsed = time.monotonic() - start
+    assert elapsed < timeout, (
+        f"Optimize took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
+        f"the per-step override may not be applied"
+    )
+    real_logger.info(f"  PASS: optimize completed in {elapsed:.1f}s (timeout={timeout}s)")
 
     # Verify state update
     assert "optimize_can_improve" in result
