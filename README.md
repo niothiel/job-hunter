@@ -121,6 +121,31 @@ The pipeline runs 13 active steps (4 deferred):
 
 14-17. *(Deferred)* Application form-filling + submission — the agent fills forms but stops before submitting. You review and submit manually.
 
+## Standalone Resume Grading
+
+Grade a single resume against a single JD — without running the full pipeline or using your candidate profile files. Useful for evaluating someone else's resume against a job, or quickly checking how a specific resume matches a specific JD.
+
+### Usage
+
+1. Put a resume file and a JD file (PDF or Markdown) in a folder:
+   ```
+   my-folder/
+   ├── resume.pdf
+   └── job-description.pdf
+   ```
+
+2. Run the command:
+   ```bash
+   python3 -m pipeline.helpers.grade_resume my-folder
+   ```
+
+The tool identifies which file is the resume and which is the JD by filename keywords ("resume"/"cv" → resume, "jd"/"job"/"description" → JD). It extracts text from both files, grades the resume against the JD using the same two-call grading protocol as the pipeline's step 7, and prints a score with per-criterion feedback.
+
+**Options:**
+- `--model <name>` — override the grader model (default: from `config.json`)
+- `--timeout <seconds>` — override the LLM timeout
+- `--json` — output raw grade JSON instead of a formatted summary
+
 ## Architecture
 
 - **LangGraph StateGraph** for per-job processing (ADR-0005) with SqliteSaver checkpointer for resumability.
@@ -139,7 +164,7 @@ job-hunter/
 │   ├── __main__.py           #   Entry point: `python3 -m pipeline`
 │   ├── infrastructure/       #   Core modules (config, state, paths, graph, LLM, etc.)
 │   ├── steps/                #   Step nodes (step1 through step10)
-│   └── helpers/              #   Standalone CLI tools (count_lines, fetch_jds, etc.)
+│   └── helpers/              #   Standalone CLI tools (count_lines, fetch_jds, grade_resume, etc.)
 ├── stages/                   # Workflow state directories (filesystem as state machine)
 │   ├── 1_listings/           #   JDs awaiting grading
 │   ├── 2_drafts/             #   Resumes in optimization loop
@@ -196,6 +221,41 @@ All configuration lives in `config.json` (gitignored, copy from `config.example.
 python3 -m pytest                    # run all tests
 python3 -m pytest pipeline/          # pipeline package tests only
 ```
+
+## Observability
+
+The pipeline supports optional LLM observability via [Arize Phoenix](https://github.com/Arize-ai/phoenix)
+(ADR-0014). Phoenix provides a local web UI for tracing prompts, responses,
+token costs, and latencies across the LangGraph pipeline — no cloud account
+or Docker required.
+
+### Setup
+
+```bash
+# 1. Install the optional observability dependencies
+pip install -r requirements-observability.txt
+
+# 2. Start the Phoenix server (runs at localhost:6006)
+python -m phoenix serve
+
+# 3. Enable tracing in the pipeline
+export PHOENIX_HOST=http://localhost:6006
+```
+
+### How it works
+
+- **Auto-instrumentation**: `openinference-instrumentation-langchain` traces
+  LangGraph nodes and LLM calls automatically — no code changes needed.
+- **Manual spans**: Each `RealLLM.__call__` creates a span with `job_slug`
+  and `step` attributes, so you can filter traces by job in the Phoenix UI.
+- **Structured logs**: All log output is JSON (via structlog) with `slug`
+  and `node` correlation keys, matching the Phoenix trace identity.
+
+### Without Phoenix
+
+The pipeline runs identically with or without Phoenix. If
+`arize-phoenix` is not installed or `PHOENIX_HOST` is unset, tracing is
+silently skipped. No configuration changes are required to run without it.
 
 ## License
 
