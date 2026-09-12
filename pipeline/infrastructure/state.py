@@ -54,12 +54,28 @@ class TriageDestination(str, Enum):
 # ─── Sub-models ────────────────────────────────────────────────────────────
 
 
+class JudgmentCall(BaseModel):
+    """A requirement classification where the employer's phrasing was ambiguous.
+
+    When the reasoning protocol encounters a phrase not in the standard
+    Core/Preferred lists, it uses judgment and records the decision here
+    for human review. Over time, common phrases get promoted to the
+    explicit lists, shrinking this set.
+    """
+
+    requirement: str = ""
+    phrase: str = ""
+    classified_as: str = ""  # "core" or "preferred"
+    reason: str = ""
+
+
 class JdGrade(BaseModel):
     """Result of grading a JD against the candidate's profile."""
 
     grade: float = Field(ge=0, le=10)
     justification: str = ""
     is_clearance: bool = False
+    judgment_calls: list[JudgmentCall] = []
 
 
 class Criterion(BaseModel):
@@ -77,6 +93,7 @@ class ResumeGrade(BaseModel):
     grade: float = Field(ge=0, le=10)
     per_criterion: list[Criterion] = []
     model: str = ""
+    judgment_calls: list[JudgmentCall] = []
 
 
 class ResumeVersion(BaseModel):
@@ -91,11 +108,26 @@ class ResumeVersion(BaseModel):
     path: Path
 
 
+class UnverifiableClaim(BaseModel):
+    """An unverifiable claim from the truthfulness review.
+
+    Matches the veracity protocol spec — each unverifiable claim is an
+    object with structured fields, not just a string.
+    """
+
+    claim: str = ""
+    location: str = ""
+    bucket: str = ""  # MATERIAL_OVERSTATEMENT or FABRICATED
+    source_checked: str = ""
+    reason: str = ""
+
+
 class Verification(BaseModel):
     """Result of truthfulness review against the LinkedIn superset."""
 
     verified: bool = False
-    unverifiable_claims: list[str] = []
+    unverifiable_claims: list[UnverifiableClaim] = []
+    summary: str = ""
 
 
 # ─── JobState (the LangGraph per-job state) ────────────────────────────────

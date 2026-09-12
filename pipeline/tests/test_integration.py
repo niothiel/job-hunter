@@ -59,11 +59,20 @@ def _grade_json(grade, assessments=None):
         {"requirement": req, "tier": tier, "assessment": a, "comment": c}
         for req, tier, a, c in assessments
     ]
-    return json.dumps({"grade": grade, "per_criterion": per_criterion, "model": "grader-model"})
+    return json.dumps({"grade": grade, "per_criterion": per_criterion, "model": "swe-1.7"})
 
 
 def _verification_json(verified=True, claims=None):
-    return json.dumps({"verified": verified, "unverifiable_claims": claims or []})
+    """Build verification JSON. Normalizes string claims to objects."""
+    if claims is None:
+        claims = []
+    normalized = []
+    for c in claims:
+        if isinstance(c, str):
+            normalized.append({"claim": c, "location": "", "bucket": "FABRICATED", "source_checked": "both", "reason": ""})
+        else:
+            normalized.append(c)
+    return json.dumps({"verified": verified, "unverifiable_claims": normalized})
 
 
 def _reasoning_json(assessments=None):
@@ -108,9 +117,9 @@ def _setup_listing(tmp_paths, slug, jd_text="We need Python."):
 def _setup_base_resume(tmp_paths):
     """Create a minimal base resume + LinkedIn for prompt inlining."""
     tmp_paths.base_resume.parent.mkdir(parents=True, exist_ok=True)
-    tmp_paths.base_resume.write_text("# Squall Leonhart\n\nSoftware Engineer\n", encoding="utf-8")
+    tmp_paths.base_resume.write_text("# Sahil Talwar\n\nSoftware Engineer\n", encoding="utf-8")
     tmp_paths.linkedin_experience.parent.mkdir(parents=True, exist_ok=True)
-    tmp_paths.linkedin_experience.write_text("# Squall Leonhart — Full Experience\n\n## Experience\n", encoding="utf-8")
+    tmp_paths.linkedin_experience.write_text("# Sahil Talwar — Full Experience\n\n## Experience\n", encoding="utf-8")
 
 
 # ─── Integration tests ────────────────────────────────────────────────────────

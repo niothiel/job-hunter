@@ -53,6 +53,12 @@ else. Do NOT write any files — the orchestrator captures your stdout and
 performs all file operations (writing the grade file, renaming the resume,
 appending to `.grades.log`).
 
+**CRITICAL: Output your JSON as content, not as thinking.** The
+orchestrator reads only your content output — anything in your thinking
+field is invisible to it. If you put the JSON in thinking, the pipeline
+will see empty output and fail. The JSON MUST appear in your response
+content.
+
 ```json
 {
   "grade": 9.3,
@@ -71,6 +77,7 @@ appending to `.grades.log`).
 
 The `per_criterion` list must be passed through from Call 1's reasoning
 JSON unchanged. You are adding the computed score fields around it.
+If Call 1 included a `judgment_calls` list, pass it through unchanged as well.
 
 ## Threshold
 

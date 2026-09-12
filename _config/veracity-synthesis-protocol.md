@@ -40,6 +40,12 @@ no markdown fences, no preamble — start with `{` and end with `}`. Nothing
 else. Do NOT write any files — the orchestrator captures your stdout and
 writes the verification file.
 
+**CRITICAL: Output your JSON as content, not as thinking.** The
+orchestrator reads only your content output — anything in your thinking
+field is invisible to it. If you put the JSON in thinking, the pipeline
+will see empty output and fail. The JSON MUST appear in your response
+content.
+
 ```json
 {
   "verified": false,

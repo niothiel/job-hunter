@@ -54,7 +54,7 @@ Read the resume at {resume_path} and the JD at {jd_path}.
 
 Extract requirements from qualifications sections only. Assign verdicts (DIRECT_HIT / ADDRESSED / PARTIAL / GAP) with one-sentence comments citing specific resume evidence.
 
-Output ONLY valid JSON to stdout (format: {{"per_criterion": [{{"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "..."}}]}}). No reasoning text, no explanations, no markdown fences, no preamble — start with `{{` and end with `}}`. Nothing else. Do NOT write any files. Do NOT compute a score — that is Call 2's job.
+Output ONLY valid JSON to stdout (format: {{"per_criterion": [{{"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "..."}}], "judgment_calls": [{{"requirement": "...", "phrase": "...", "classified_as": "preferred", "reason": "..."}}]}}). No reasoning text, no explanations, no markdown fences, no preamble — start with `{{` and end with `}}`. Nothing else. Do NOT write any files. Do NOT compute a score — that is Call 2's job.
 
 If the JD requires security clearance, output CLEARANCE instead of the reasoning JSON."""
 
@@ -75,7 +75,7 @@ You are grading resume v{version} for {slug}. The reasoning from Call 1 is provi
 Reasoning JSON from Call 1:
 {reasoning_json}
 
-Compute the score using the protocol formula (ceiling, core score, preferred bonus, quantitative base, subjective adjustment, final score). Pass through the per_criterion list unchanged.
+Compute the score using the protocol formula (ceiling, core score, preferred bonus, quantitative base, subjective adjustment, final score). Pass through the per_criterion list unchanged. If judgment_calls was provided in the reasoning JSON, pass it through unchanged as well.
 
 This is arithmetic — count the verdicts, apply the formula, output the number. You have all the input above. Do NOT run commands, write scripts, search files, or use any tools. Do NOT read files — everything you need is in this prompt. Such actions will be blocked by a hook and waste time. If you spend more than a few seconds on this, you are overthinking. Just compute and output.
 
@@ -232,6 +232,27 @@ def step7_grade_resume_node(state: JobState, config: RunnableConfig) -> dict:
     # Orchestrator writes the grade JSON file (ADR-0010)
     grade_file = deps.paths.grading / slug / f"grade-v{version}.json"
     grade_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Q1: Clamp out-of-range grades before validation.
+    # Transport success but validation failure — the model responded with
+    # valid JSON but the score is out of [0, 10] range. Clamp, warn, and
+    # record the raw value for review rather than failing the whole call.
+    raw_grade = grade_data.get("grade")
+    if raw_grade is not None:
+        raw_grade_float = float(raw_grade)
+        if not (0 <= raw_grade_float <= 10):
+            clamped = max(0.0, min(10.0, raw_grade_float))
+            deps.logger.warning(
+                f"  {slug}: resume grade {raw_grade_float} out of range [0, 10] — "
+                f"clamped to {clamped} (flagged for review)"
+            )
+            grade_data["grade"] = clamped
+            # Record the raw value in justification for audit
+            orig_just = grade_data.get("justification", "")
+            grade_data["justification"] = (
+                f"[VALIDATION: raw grade {raw_grade_float} clamped to {clamped}] {orig_just}"
+            )
+
     with open(grade_file, "w") as f:
         json.dump(grade_data, f, indent=2)
 

@@ -1,4 +1,4 @@
-"""Tests for step9_veracity, step10_finalize, and terminal nodes."""
+"""Tests for step9_truthfulness, step10_finalize, and terminal nodes."""
 import json
 from pathlib import Path
 
@@ -39,13 +39,13 @@ def _setup_drafts(tmp_paths, slug="test-co", resume_grade_prefix="[9.5]"):
         encoding="utf-8",
     )
     (job_dir / f"{resume_grade_prefix} resume-v1.md").write_text(
-        "# Squall Leonhart\n\nSoftware Engineer\n", encoding="utf-8"
+        "# Sahil Talwar\n\nSoftware Engineer\n", encoding="utf-8"
     )
     # Create source files needed for prompt inlining
     tmp_paths.base_resume.parent.mkdir(parents=True, exist_ok=True)
-    tmp_paths.base_resume.write_text("# Squall Leonhart\n\nSoftware Engineer\n", encoding="utf-8")
+    tmp_paths.base_resume.write_text("# Sahil Talwar\n\nSoftware Engineer\n", encoding="utf-8")
     tmp_paths.linkedin_experience.parent.mkdir(parents=True, exist_ok=True)
-    tmp_paths.linkedin_experience.write_text("# Squall Leonhart — Full Experience\n\n## Experience\n", encoding="utf-8")
+    tmp_paths.linkedin_experience.write_text("# Sahil Talwar — Full Experience\n\n## Experience\n", encoding="utf-8")
     return job_dir
 
 
@@ -58,10 +58,24 @@ def _setup_listings(tmp_paths, slug="test-co", jd_grade_prefix="[3.0]"):
 
 
 def _make_verification_json(verified=True, claims=None):
-    """Build a verification JSON dict for FakeLLM responses."""
+    """Build a verification JSON dict for FakeLLM responses.
+
+    claims should be a list of dicts with claim/location/bucket/source_checked/reason,
+    matching the veracity protocol spec. If strings are passed, they're wrapped
+    as minimal claim objects.
+    """
+    if claims is None:
+        claims = []
+    # Normalize string claims to objects (backward compat for older tests)
+    normalized = []
+    for c in claims:
+        if isinstance(c, str):
+            normalized.append({"claim": c, "location": "", "bucket": "FABRICATED", "source_checked": "both", "reason": ""})
+        else:
+            normalized.append(c)
     return json.dumps({
         "verified": verified,
-        "unverifiable_claims": claims or [],
+        "unverifiable_claims": normalized,
     })
 
 

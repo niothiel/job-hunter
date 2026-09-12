@@ -1,0 +1,26 @@
+# Virtual Environments & Packages
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Python Caches & Build Artifacts
+__pycache__/
+.pytest_cache/
+*.pyc
+dist/
+build/
+
+# Databases, Scraped Data, & Log Outflows
+*.sqlite
+*.db
+*.json
+*.jsonl
+*.csv
+*.log
+output/
+
+# LLM Observability & Agent Session State
+.phoenix/
+.claude/
+.devin/

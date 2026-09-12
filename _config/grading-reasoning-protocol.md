@@ -29,10 +29,13 @@ job duties, not candidate requirements.
 
 Classify each as **Core** or **Preferred** based on the employer's framing:
 - Core: "required", "must have", "minimum", "essential", "Basic Qualifications"
-- Preferred: "preferred", "nice to have", "bonus", "would be a plus"
+- Preferred: "preferred", "nice to have", "bonus", "would be a plus", "highly desirable", "desired", "strongly preferred"
 
-If ambiguous, classify as Core. Maximum 10 requirements — pick the most
-important if the JD has more.
+If the phrase is not in either list above, use your judgment to classify
+it as Core or Preferred based on whether it reads as a disqualifier (Core)
+or a differentiator (Preferred). Record the phrase and your reasoning in
+the `judgment_calls` field for human review. Maximum 10 requirements —
+pick the most important if the JD has more.
 
 ### Step 2: Assess each criterion
 
@@ -53,10 +56,19 @@ no markdown fences, no preamble — start with `{` and end with `}`. Nothing
 else. Do NOT write any files — the orchestrator captures your stdout and
 passes it to Call 2 (scoring).
 
+**CRITICAL: Output your JSON as content, not as thinking.** The
+orchestrator reads only your content output — anything in your thinking
+field is invisible to it. If you put the JSON in thinking, the pipeline
+will see empty output and fail. The JSON MUST appear in your response
+content.
+
 ```json
 {
   "per_criterion": [
     {"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "specific resume evidence"}
+  ],
+  "judgment_calls": [
+    {"requirement": "...", "phrase": "highly desirable", "classified_as": "preferred", "reason": "Not in standard lists. 'Highly desirable' signals preference, not requirement."}
   ]
 }
 ```
@@ -67,6 +79,7 @@ passes it to Call 2 (scoring).
 - `tier`: "core" or "preferred"
 - `assessment`: one of DIRECT_HIT, ADDRESSED, PARTIAL, GAP
 - `comment`: one-sentence comment citing specific resume evidence
+- `judgment_calls`: list of ambiguous classification decisions (empty if none). Include one entry per requirement where the employer's phrasing was not in the standard Core/Preferred lists above.
 
 ## Clearance Detection (ADR-0007)
 
@@ -77,3 +90,5 @@ reasoning JSON.
 
 - Do not invent requirements from responsibilities or role descriptions.
 - Do not override the employer's requirement tiering.
+- Do not deliberate on ambiguous phrases — commit to your first reasonable
+  classification and record it in `judgment_calls`.

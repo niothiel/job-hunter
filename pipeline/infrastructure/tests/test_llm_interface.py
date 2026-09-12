@@ -210,6 +210,110 @@ def test_real_llm_log_failure_doesnt_affect_call(monkeypatch, tmp_path):
     assert err is None
 
 
+# ─── RealLLM timing recording ──────────────────────────────────────────────
+
+
+def test_real_llm_records_timing_on_success(monkeypatch):
+    """RealLLM.records timing data in self.calls on a successful call."""
+    def fake_call_llm_safe(prompt, **kwargs):
+        return "output", None
+
+    import sys
+    import types
+
+    fake_module = types.ModuleType("pipeline.infrastructure.devin_cli")
+    fake_module.call_llm_safe = fake_call_llm_safe
+    monkeypatch.setitem(sys.modules, "pipeline.infrastructure.devin_cli", fake_module)
+
+    real = RealLLM()
+    real("test prompt", model="swe-1.7", timeout=120, workspace=".",
+         job_slug="acme", step="grade-resume")
+
+    assert len(real.calls) == 1
+    entry = real.calls[0]
+    assert entry["step"] == "grade-resume"
+    assert entry["call_index"] == 1
+    assert entry["call_id"] == "grade-resume#1"
+    assert entry["timeout_s"] == 120
+    assert entry["status"] == "ok"
+    assert entry["model"] == "swe-1.7"
+    assert entry["job_slug"] == "acme"
+    assert entry["duration_s"] >= 0
+    assert real.last_output == "output"
+
+
+def test_real_llm_records_timing_on_error(monkeypatch):
+    """RealLLM.records timing data in self.calls even on error."""
+    from pipeline.infrastructure.devin_cli import LLMError
+
+    def fake_call_llm_safe(prompt, **kwargs):
+        return None, LLMError("timed out")
+
+    import sys
+    import types
+
+    fake_module = types.ModuleType("pipeline.infrastructure.devin_cli")
+    fake_module.call_llm_safe = fake_call_llm_safe
+    monkeypatch.setitem(sys.modules, "pipeline.infrastructure.devin_cli", fake_module)
+
+    real = RealLLM()
+    out, err = real("test", model="x", timeout=30, workspace=".",
+                    job_slug="co", step="feasibility")
+    assert out is None
+    assert err is not None
+
+    assert len(real.calls) == 1
+    entry = real.calls[0]
+    assert entry["step"] == "feasibility"
+    assert entry["status"].startswith("error:")
+    assert "timed out" in entry["status"]
+    assert real.last_output is None
+
+
+def test_real_llm_tracks_per_step_call_index(monkeypatch):
+    """RealLLM tracks per-step call indices across multiple calls."""
+    def fake_call_llm_safe(prompt, **kwargs):
+        return "output", None
+
+    import sys
+    import types
+
+    fake_module = types.ModuleType("pipeline.infrastructure.devin_cli")
+    fake_module.call_llm_safe = fake_call_llm_safe
+    monkeypatch.setitem(sys.modules, "pipeline.infrastructure.devin_cli", fake_module)
+
+    real = RealLLM()
+    # Two calls for grade-jd, one for customize
+    real("p1", model="x", timeout=1, workspace=".", step="grade-jd")
+    real("p2", model="x", timeout=1, workspace=".", step="grade-jd")
+    real("p3", model="x", timeout=1, workspace=".", step="customize")
+
+    assert len(real.calls) == 3
+    assert real.calls[0]["call_id"] == "grade-jd#1"
+    assert real.calls[1]["call_id"] == "grade-jd#2"
+    assert real.calls[2]["call_id"] == "customize#1"
+
+
+def test_real_llm_step_defaults_to_unknown(monkeypatch):
+    """RealLLM uses 'unknown' as step label when step is not provided."""
+    def fake_call_llm_safe(prompt, **kwargs):
+        return "output", None
+
+    import sys
+    import types
+
+    fake_module = types.ModuleType("pipeline.infrastructure.devin_cli")
+    fake_module.call_llm_safe = fake_call_llm_safe
+    monkeypatch.setitem(sys.modules, "pipeline.infrastructure.devin_cli", fake_module)
+
+    real = RealLLM()
+    real("test", model="x", timeout=1, workspace=".")
+
+    assert len(real.calls) == 1
+    assert real.calls[0]["step"] == "unknown"
+    assert real.calls[0]["call_id"] == "unknown#1"
+
+
 # ─── parse_llm_json (shared LLM output parser) ──────────────────────────────
 
 

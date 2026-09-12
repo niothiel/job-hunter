@@ -77,7 +77,7 @@ Job: {slug}
 
 Extract requirements from the JD's qualifications sections only. Assess each against the candidate's full background (base resume + LinkedIn above). A requirement is a DIRECT_HIT if the experience appears in either source.
 
-Output ONLY valid JSON to stdout (format: {{"per_criterion": [{{"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "..."}}]}}). No reasoning text, no explanations, no markdown fences, no preamble — start with `{{` and end with `}}`. Nothing else. Do NOT write any files. Do NOT compute a score — that is Call 2's job.
+Output ONLY valid JSON to stdout (format: {{"per_criterion": [{{"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "..."}}], "judgment_calls": [{{"requirement": "...", "phrase": "...", "classified_as": "preferred", "reason": "..."}}]}}). No reasoning text, no explanations, no markdown fences, no preamble — start with `{{` and end with `}}`. Nothing else. Do NOT write any files. Do NOT compute a score — that is Call 2's job.
 
 If the JD requires security clearance, output CLEARANCE instead of the reasoning JSON."""
 
@@ -94,7 +94,7 @@ You are grading the JD for {slug}. The reasoning from Call 1 is provided below a
 Reasoning JSON from Call 1:
 {reasoning_json}
 
-Compute the score using the protocol formula (ceiling, core score, preferred bonus, quantitative base, subjective adjustment, final score). Pass through the per_criterion list unchanged.
+Compute the score using the protocol formula (ceiling, core score, preferred bonus, quantitative base, subjective adjustment, final score). Pass through the per_criterion list unchanged. If judgment_calls was provided in the reasoning JSON, pass it through unchanged as well.
 
 This is arithmetic — count the verdicts, apply the formula, output the number. You have all the input above. Do NOT run commands, write scripts, search files, or use any tools. Do NOT read files — everything you need is in this prompt. Such actions will be blocked by a hook and waste time. If you spend more than a few seconds on this, you are overthinking. Just compute and output.
 
@@ -186,9 +186,20 @@ def step4_grade_jd_node(state: JobState, config: RunnableConfig) -> dict:
 
     grade = float(grade_data.get("grade", -1))
     if not (0 <= grade <= 10):
-        raise RuntimeError(f"{slug}: grade {grade} out of range [0, 10]")
-
-    justification = str(grade_data.get("justification", ""))
+        # Transport success but validation failure — clamp and warn.
+        # The model responded with valid JSON but the score is out of range.
+        # Clamp to [0, 10], log a warning, and record the raw value for review.
+        raw_grade = grade
+        grade = max(0.0, min(10.0, grade))
+        deps.logger.warning(
+            f"  {slug}: JD grade {raw_grade} out of range [0, 10] — "
+            f"clamped to {grade} (flagged for review)"
+        )
+        # Record the raw value in justification for audit
+        justification = str(grade_data.get("justification", ""))
+        justification = f"[VALIDATION: raw grade {raw_grade} clamped to {grade}] {justification}"
+    else:
+        justification = str(grade_data.get("justification", ""))
 
     deps.logger.info(f"  {slug}: JD grade = {grade}")
     jd_grade = JdGrade(grade=grade, justification=justification, is_clearance=False)

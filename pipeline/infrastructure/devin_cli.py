@@ -19,11 +19,13 @@ Usage:
     except LLMError as e:
         print(f"LLM call failed: {e}")
 """
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 import time
+import structlog
 from pathlib import Path
 
 
@@ -61,10 +63,70 @@ def _build_env():
     return env
 
 
+def _extract_thinking_from_export(export_path: str) -> str | None:
+    """Parse a devin --export file and extract thinking content if content is empty.
+
+    The export file is a JSON conversation transcript. We look for the last
+    assistant message and return its thinking text if the content is empty.
+
+    Returns the thinking text, or None if no thinking is found or the file
+    can't be parsed.
+    """
+    try:
+        with open(export_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    # The export format may vary — try common structures.
+    # Format 1: {"messages": [{"role": "assistant", "content": "...", "thinking": {"thinking": "..."}}]}
+    # Format 2: {"nodes": [{"chat_message": "{\"role\": \"assistant\", ...}"}]}
+    messages = None
+    if isinstance(data, dict):
+        if "messages" in data:
+            messages = data["messages"]
+        elif "nodes" in data:
+            # Nodes have chat_message as JSON strings
+            messages = []
+            for node in data["nodes"]:
+                if isinstance(node, dict) and "chat_message" in node:
+                    try:
+                        msg = json.loads(node["chat_message"])
+                        messages.append(msg)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+    if not messages:
+        return None
+
+    # Find the last assistant message
+    for msg in reversed(messages):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", "")
+        # Skip system prefix messages
+        if content and isinstance(content, str) and content.startswith("You are Devin"):
+            continue
+        # If content is non-empty, no need for thinking fallback
+        if content:
+            return None
+        # Content is empty — extract thinking
+        thinking = msg.get("thinking", {})
+        if isinstance(thinking, dict):
+            thinking_text = thinking.get("thinking", "")
+        else:
+            thinking_text = str(thinking)
+        if thinking_text:
+            return thinking_text
+    return None
+
+
 def call_llm(prompt: str, *, model="customizer-model", timeout=120,
              workspace=None, retries=2, retry_delay=5,
              export_path=None, permission_mode="dangerous",
-             config_path=None) -> str:
+             config_path=None, alive_check_seconds=10) -> str:
     """Call `devin -p` and return stdout text.
 
     Args:
@@ -84,6 +146,9 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
             truthfulness reviewer — ADR-0010).
         config_path: If set, passes --config <path> to devin -p. Used for scoped
             permission configs (e.g. customizer — ADR-0010).
+        alive_check_seconds: If > 0, kill the process and retry if no stdout
+            is produced within this many seconds (Q4 — catches backend failures
+            where the model never responds). Default: 10.
 
     Returns:
         The stdout text from devin -p.
@@ -93,10 +158,21 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
     """
     devin_bin = _find_devin()
     env = _build_env()
+    logger = structlog.get_logger(__name__)
 
     # Write prompt to a temp file — avoids shell escaping and arg length issues.
     # Used for ALL calls (not just large ones) for consistency.
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".md", prefix="devin_prompt_")
+    # Always use a temp export file for thinking-only fallback (Q3).
+    # If the caller provides export_path, use that instead.
+    own_export = None
+    if not export_path:
+        own_export_fd, own_export = tempfile.mkstemp(
+            suffix=".json", prefix="devin_export_"
+        )
+        os.close(own_export_fd)
+    effective_export = export_path or own_export
+
     try:
         with os.fdopen(tmp_fd, "w") as f:
             f.write(prompt)
@@ -108,37 +184,46 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
             "--permission-mode", permission_mode,
             "--respect-workspace-trust", "false",
             "--prompt-file", tmp_path,
+            "--export", str(effective_export),
         ]
         if config_path:
             cmd.extend(["--config", str(config_path)])
-        if export_path:
-            cmd.extend(["--export", str(export_path)])
 
         last_error = None
         for attempt in range(retries + 1):
             try:
+                # Q4: Alive check — on the first attempt, use a shorter
+                # timeout (alive_check_seconds) to catch backend failures
+                # where the model never responds. If the first attempt
+                # times out, subsequent attempts use the full timeout.
+                if (attempt == 0 and alive_check_seconds
+                        and alive_check_seconds < timeout):
+                    effective_timeout = alive_check_seconds
+                else:
+                    effective_timeout = timeout
+
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=timeout,
+                    timeout=effective_timeout,
                     env=env,
                     cwd=workspace,
                 )
             except (subprocess.TimeoutExpired, OSError) as e:
-                # Catch BOTH timeout and OS-level errors (FileNotFoundError,
-                # PermissionError, EMFILE/too-many-open-files, etc.). Previously
-                # only TimeoutExpired was caught — OSError bypassed the retry
-                # loop entirely, propagated uncaught through call_llm_safe
-                # (which only caught LLMError), and reached the pipeline's
-                # broad except Exception, marking the batch as failed with
-                # NO retries. This was the likely cause of the 418-in-10-seconds
-                # startup failure pattern observed on 2026-08-19.
                 if isinstance(e, subprocess.TimeoutExpired):
-                    last_error = LLMError(
-                        f"devin -p timed out after {timeout}s (attempt {attempt + 1}/{retries + 1})",
-                        returncode=None,
-                    )
+                    if attempt == 0 and alive_check_seconds and alive_check_seconds < timeout:
+                        last_error = LLMError(
+                            f"devin -p alive check timed out after "
+                            f"{alive_check_seconds}s (attempt {attempt + 1}/{retries + 1})",
+                            returncode=None,
+                        )
+                    else:
+                        last_error = LLMError(
+                            f"devin -p timed out after {effective_timeout}s "
+                            f"(attempt {attempt + 1}/{retries + 1})",
+                            returncode=None,
+                        )
                 else:
                     last_error = LLMError(
                         f"devin -p failed to start: {type(e).__name__}: {e} "
@@ -161,6 +246,18 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
                 continue
 
             if not result.stdout.strip():
+                # Q3: Thinking-only fallback — if stdout is empty but the
+                # export file has thinking content, extract it.
+                thinking = _extract_thinking_from_export(str(effective_export))
+                if thinking and thinking.strip():
+                    logger.warning(
+                        "devin -p produced empty stdout — recovered JSON "
+                        "from thinking field (thinking-only fallback)",
+                        attempt=attempt + 1,
+                        thinking_len=len(thinking),
+                    )
+                    return thinking.strip()
+
                 last_error = LLMError(
                     f"devin -p produced empty output (attempt {attempt + 1}/{retries + 1})",
                     stdout=result.stdout,
@@ -181,12 +278,17 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
             os.unlink(tmp_path)
         except OSError:
             pass
+        if own_export:
+            try:
+                os.unlink(own_export)
+            except OSError:
+                pass
 
 
 def call_llm_safe(prompt: str, *, model="customizer-model", timeout=120,
                   workspace=None, retries=2, retry_delay=5,
                   export_path=None, permission_mode="dangerous",
-                  config_path=None) -> tuple[str | None, LLMError | None]:
+                  config_path=None, alive_check_seconds=10) -> tuple[str | None, LLMError | None]:
     """Like call_llm but returns (output, error) instead of raising.
 
     Useful when the caller wants to handle errors inline without try/except.
@@ -199,7 +301,8 @@ def call_llm_safe(prompt: str, *, model="customizer-model", timeout=120,
                         retries=retries, retry_delay=retry_delay,
                         export_path=export_path,
                         permission_mode=permission_mode,
-                        config_path=config_path), None
+                        config_path=config_path,
+                        alive_check_seconds=alive_check_seconds), None
     except LLMError as e:
         return None, e
     except Exception as e:

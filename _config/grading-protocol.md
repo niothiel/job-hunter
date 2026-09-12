@@ -33,10 +33,13 @@ job duties, not candidate requirements.
 
 Classify each as **Core** or **Preferred** based on the employer's framing:
 - Core: "required", "must have", "minimum", "essential", "Basic Qualifications"
-- Preferred: "preferred", "nice to have", "bonus", "would be a plus"
+- Preferred: "preferred", "nice to have", "bonus", "would be a plus", "highly desirable", "desired", "strongly preferred"
 
-If ambiguous, classify as Core. Maximum 10 requirements — pick the most
-important if the JD has more.
+If the phrase is not in either list above, use your judgment to classify
+it as Core or Preferred based on whether it reads as a disqualifier (Core)
+or a differentiator (Preferred). Record the phrase and your reasoning in
+the `judgment_calls` field for human review. Maximum 10 requirements —
+pick the most important if the JD has more.
 
 ### Step 2: Assess each criterion
 
@@ -93,6 +96,9 @@ appending to `.grades.log`).
   "per_criterion": [
     {"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "specific resume evidence"}
   ],
+  "judgment_calls": [
+    {"requirement": "...", "phrase": "highly desirable", "classified_as": "preferred", "reason": "Not in standard lists. 'Highly desirable' signals preference, not requirement."}
+  ],
   "subjective_justification": "one sentence — which verdict drives the adjustment",
   "justification": "one paragraph summary"
 }
@@ -112,3 +118,5 @@ If the JD requires security clearance, output `CLEARANCE` instead of a grade.
 
 - Do not invent requirements from responsibilities or role descriptions.
 - Do not override the employer's requirement tiering.
+- Do not deliberate on ambiguous phrases — commit to your first reasonable
+  classification and record it in `judgment_calls`.

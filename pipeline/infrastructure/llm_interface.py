@@ -12,13 +12,13 @@ deps via get_deps(runnable_config) -> NodeDeps.
 
 Every RealLLM call is logged to the llm_calls audit table (W7) with full
 prompt, response, model params, and timing. job_slug and step are passed
-through by callers; until Stream 1a lands, some callers may use None.
+through by callers; step nodes pass job_slug=state.slug and step="<step-name>".
 """
 from __future__ import annotations
 
 import json
-import logging
 import re
+import structlog
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -99,6 +99,12 @@ class RealLLM:
     Every call is logged to the llm_calls audit table (W7) with full prompt,
     response, params, and duration. job_slug and step identify the call
     context for later querying.
+
+    Timing data is also recorded in self.calls (mirrors FakeLLM's audit
+    trail) so test scripts and eval runners can use RealLLM directly
+    without a separate timing wrapper. Each entry is a dict with:
+        step, call_index, duration_s, timeout_s, status, job_slug, model
+    self.last_output holds the most recent call's output (or None).
     """
 
     def __init__(self, db_path: str | None = None):
@@ -108,6 +114,9 @@ class RealLLM:
                      need the audit trail). Defaults to None.
         """
         self._db_path = db_path
+        self.calls: list[dict] = []
+        self.last_output: str | None = None
+        self._step_counters: dict[str, int] = {}
 
     def __call__(
         self, prompt: str, *, model: str, timeout: int, workspace: str,
@@ -121,16 +130,44 @@ class RealLLM:
         # Import here so the pipeline package doesn't hard-depend on devin_cli
         # at import time — tests using FakeLLM don't need devin installed.
         from pipeline.infrastructure.devin_cli import call_llm_safe
+        from pipeline.infrastructure.observability import trace_llm_call
+
+        step_label = step or "unknown"
+        call_index = self._step_counters.get(step_label, 0) + 1
+        self._step_counters[step_label] = call_index
 
         start = time.monotonic()
-        output, error = call_llm_safe(
+        output, error = trace_llm_call(
+            job_slug, step, model, call_llm_safe,
             prompt, model=model, timeout=timeout, workspace=workspace,
             retries=retries, retry_delay=retry_delay,
             export_path=export_path,
             permission_mode=permission_mode,
             config_path=config_path,
         )
-        duration_ms = int((time.monotonic() - start) * 1000)
+        # Note: trace_llm_call receives model as its 3rd arg (model_name)
+        # for the span attribute, and passes model=model through to fn via kwargs.
+        duration_s = time.monotonic() - start
+        duration_ms = int(duration_s * 1000)
+
+        # Record timing for test/eval use (mirrors FakeLLM's calls list).
+        if output:
+            status = "ok"
+        elif error:
+            status = f"error: {str(error)[:80]}"
+        else:
+            status = "empty"
+        self.calls.append({
+            "step": step_label,
+            "call_index": call_index,
+            "call_id": f"{step_label}#{call_index}",
+            "duration_s": round(duration_s, 1),
+            "timeout_s": timeout,
+            "status": status,
+            "job_slug": job_slug,
+            "model": model,
+        })
+        self.last_output = output
 
         # Audit log (W7). Failure-isolated — never affects the call result.
         self._log_call(
@@ -162,9 +199,10 @@ class RealLLM:
             )
             audit.close()
         except Exception as e:
-            logging.getLogger(__name__).warning(
-                "llm_calls audit log failed for step=%s (non-critical): %s",
-                step, e,
+            structlog.get_logger(__name__).warning(
+                "llm_calls audit log failed",
+                step=step,
+                error=str(e),
             )
 
 
@@ -215,7 +253,7 @@ class NodeDeps:
     """
 
     llm: LLM
-    logger: logging.Logger
+    logger: structlog.stdlib.BoundLogger
     config: PipelineConfig
     paths: Paths
 
