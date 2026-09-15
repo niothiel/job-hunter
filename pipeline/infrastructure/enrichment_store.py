@@ -28,9 +28,9 @@ Usage:
     jobs = store.query_jobs(status="feasible", has_description=True, limit=10)
 """
 import json
-import logging
 import os
 import sqlite3
+import structlog
 import sys
 from datetime import datetime, timezone
 
@@ -119,7 +119,7 @@ class EnrichmentStore:
     # ─── Jobs table (scraper mirror) ──────────────────────────────────────
 
     def _upsert_jobs(self, jobs: list[dict], *, quiet: bool = False,
-                     logger: logging.Logger | None = None) -> int:
+                     logger: structlog.stdlib.BoundLogger | None = None) -> int:
         """Validate and upsert a list of job dicts into the jobs table.
 
         Shared by sync_jobs_db (full sync) and sync_delta (incremental).
@@ -185,7 +185,7 @@ class EnrichmentStore:
         return len(rows)
 
     def sync_jobs_db(self, all_jobs_path: str, *, quiet: bool = False,
-                     logger: logging.Logger | None = None) -> int:
+                     logger: structlog.stdlib.BoundLogger | None = None) -> int:
         """Upsert all_jobs.json into the jobs table.
 
         Reads the scraper's all_jobs.json (read-only) and upserts every job
@@ -213,7 +213,7 @@ class EnrichmentStore:
         return count
 
     def sync_delta(self, delta_path: str, *, quiet: bool = False,
-                   logger: logging.Logger | None = None) -> tuple[int, int]:
+                   logger: structlog.stdlib.BoundLogger | None = None) -> tuple[int, int]:
         """Upsert a single delta file's jobs into the jobs table.
 
         Reads a delta JSON file (produced by the scraper's _write_delta),

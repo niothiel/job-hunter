@@ -37,7 +37,7 @@ def step1_feasibility(
         from pipeline.infrastructure.llm_interface import RealLLM
 
         if llm is None:
-            llm = RealLLM()
+            llm = RealLLM(db_path=str(paths.jobs_db), export_dir=str(paths.exports))
 
         # Query all jobs from the DB mirror
         jobs = store.query_jobs(status="all")
@@ -59,6 +59,8 @@ def step1_feasibility(
         checker = DevinCLIChecker(
             llm=llm, model=model, prompt=prompt, timeout=timeout,
             workspace=str(paths.hunter_dir),
+            retries=config.llm_retries,
+            retry_delay=config.llm_retry_delay,
         )
 
         batch_size = checker.BATCH_SIZE

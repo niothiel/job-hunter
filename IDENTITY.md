@@ -63,11 +63,12 @@ job-hunter/
 │   │   ├── step3_ingest.py      #   Create listing folder + JD file (per-job graph node).
 │   │   ├── step4_grade_jd.py    #   Grade JD + LLM clearance detection (per-job node).
 │   │   ├── step5_triage.py      #   Triage: trash/rejected/drafts (per-job node).
-│   │   ├── step6_customize.py   #   Customize/optimize resume (per-job node).
+│   │   ├── step6_customize.py   #   Customize/revise resume + YES/NO signal (per-job node).
 │   │   ├── step7_grade_resume.py#   Grade resume + rename + audit log (per-job node).
-│   │   ├── step8_optimize.py    #   Optimize decision + LLM "can improve?" (per-job node).
-│   │   ├── step9_veracity.py    #   Truthfulness review (per-job node).
-│   │   ├── step10_finalize.py   #   Move to ready + terminal nodes (trash/rejected).
+│   │   ├── step8_veracity.py    #   In-loop truthfulness review, per version (per-job node).
+│   │   ├── step9_should_continue.py # Pure routing: continue or stop (per-job node).
+│   │   ├── step10_final_veracity.py # Final truthfulness gate on the selected version (per-job node).
+│   │   ├── step11_finalize.py   #   Prune non-selected, move to ready + terminal nodes.
 │   │   └── tests/               #   Co-located tests for step nodes.
 │   ├── helpers/                 #   Standalone CLI tools and utilities.
 │   │   ├── count_lines.py       #   Measures rendered line count of a resume markdown file.

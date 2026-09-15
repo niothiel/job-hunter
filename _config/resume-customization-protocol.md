@@ -56,8 +56,8 @@ Match the tone in the generic resume exactly - not too many buzzwords, minimal c
 
 Three documents form the reference pool the customizer draws from to optimally match the JD. The customizer's job is to select and rephrase the strongest truthful material from this pool — rephrasing, condensing, reordering, and pulling in material as needed, as long as every claim is truthful (appears in the base resume or LinkedIn).
 
-- **Base resume** (`profile/base-resume/base-resume.md`) — the customization BASE. Every tailored resume starts from a fresh copy of this template. Preserve its structure, formatting, section order, and existing bullets as the starting point.
-- **Full experience** (`profile/full-experience/full-experience.md`) — the SOURCING reference. Consult for material not on the base resume (new bullets, skills, technologies, earlier roles). Anything pulled in must appear verifiably in LinkedIn.
+- **Base resume** (`profile/base-resume/`) — the customization BASE. Every tailored resume starts from a fresh copy of this template. Preserve its structure, formatting, section order, and existing bullets as the starting point.
+- **Full experience** (`profile/full-experience/`) — the SOURCING reference. Consult for material not on the base resume (new bullets, skills, technologies, earlier roles). Anything pulled in must appear verifiably in LinkedIn.
 - **Few-shot examples** (`examples/customized-resumes/`) — hand-customized resumes that demonstrate the desired transformation patterns. Study these before customizing.
 - **Never build a customized resume directly from the LinkedIn experience.** The output is always: base resume + pulled-in material, formatted to match the base. LinkedIn is a source, not a template.
 

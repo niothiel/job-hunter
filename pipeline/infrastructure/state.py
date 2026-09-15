@@ -69,17 +69,8 @@ class JudgmentCall(BaseModel):
     reason: str = ""
 
 
-class JdGrade(BaseModel):
-    """Result of grading a JD against the candidate's profile."""
-
-    grade: float = Field(ge=0, le=10)
-    justification: str = ""
-    is_clearance: bool = False
-    judgment_calls: list[JudgmentCall] = []
-
-
 class Criterion(BaseModel):
-    """One requirement from the JD, assessed against the resume."""
+    """One requirement from the JD, assessed against a source document."""
 
     requirement: str = ""
     tier: str = ""  # "core", "nice-to-have", etc.
@@ -87,25 +78,54 @@ class Criterion(BaseModel):
     comment: str = ""
 
 
+class JdGrade(BaseModel):
+    """Result of grading a JD against the candidate's profile."""
+
+    grade: float = Field(ge=0, le=10)
+    justification: str = ""
+    is_clearance: bool = False
+    per_criterion: list[Criterion] = []
+    judgment_calls: list[JudgmentCall] = []
+
+
 class ResumeGrade(BaseModel):
     """Result of grading a customized resume against a JD."""
 
     grade: float = Field(ge=0, le=10)
     per_criterion: list[Criterion] = []
+    justification: str = ""
     model: str = ""
     judgment_calls: list[JudgmentCall] = []
 
 
 class ResumeVersion(BaseModel):
-    """One version of a customized resume (file on disk + version number).
+    """One version of a customized resume.
 
-    The grade lives in JobState.latest_grade, not here — the grade node
-    updates it separately from the customize node that creates the version.
-    This avoids list-reducer complexity (append vs replace).
+    Used in two roles (ADR-0018):
+
+    - In ``JobState.resume_versions``: file tracking only (version + path),
+      appended by the customize node when the version is created.
+    - In ``JobState.version_history``: a full evaluation record (grade,
+      veracity, draft hash, truthfulness issues), appended by the veracity
+      node after the version has been graded and reviewed.
+
+    ``verified`` is tri-state on history records: True = passed truthfulness
+    review, False = failed review (unverifiable claims found), None = review
+    not run (grade below threshold, or dry run). The distinction matters for
+    finalization — a skipped review is an ordinary grade failure, while a
+    failed review means the model produced unverifiable claims.
     """
 
     version: int = Field(ge=1)
     path: Path
+    grade: float | None = None
+    verified: bool | None = None
+    draft_hash: str = ""
+    truthfulness_issues: list[str] = []
+    # Per-criterion grade detail (why the version scored what it did) —
+    # carried per-version so rejection metadata can explain each attempt.
+    per_criterion: list[Criterion] = []
+    justification: str = ""
 
 
 class UnverifiableClaim(BaseModel):
@@ -159,14 +179,37 @@ class JobState(BaseModel):
     # ── Resume versions (accumulating — LangGraph concatenates on update) ──
     resume_versions: Annotated[list[ResumeVersion], add] = []
 
-    # ── Grade for the latest version (set by grade node, read by optimize/truthfulness) ──
+    # ── Per-version evaluation history (appended by the veracity node, ADR-0018) ──
+    version_history: Annotated[list[ResumeVersion], add] = []
+
+    # ── Grade for the latest version (set by grade node, read by veracity/customize) ──
     latest_grade: ResumeGrade | None = None
 
-    # ── Optimize cycle control ──
-    optimize_can_improve: bool | None = None
+    # ── Customize loop control (ADR-0018) ──
+    # YES/NO stopping signal answered by the customizer after editing.
+    customizer_can_improve: bool | None = None
+    # Set when a revision left the draft byte-identical (and said NO) —
+    # grading/veracity are skipped for the duplicate via route_after_customize.
+    customizer_draft_unchanged: bool = False
+    # Routing decision set by step9_should_continue (True = next version).
+    should_continue: bool | None = None
 
     # ── Truthfulness ──
+    # Latest version's in-loop review result (set by step8_veracity).
     verification: Verification | None = None
+    # Final truthfulness gate result on the selected version (set by
+    # step10_final_veracity). Distinct from `verification`: the final check
+    # re-verifies the selected version independently after the loop.
+    final_verification: Verification | None = None
+    # Versions that failed the final truthfulness gate (step10). A version
+    # can pass in-loop review yet fail the final re-check (verification is
+    # non-deterministic) — these are excluded from further selection.
+    final_failed_versions: list[int] = []
+
+    # ── Finalize: the version confirmed by step10_final_veracity ──
+    # Only set once the selected version has PASSED the final truthfulness
+    # gate — a non-None value means "verified winner ready to ship".
+    selected_version: int | None = None
 
     # ── Final destination (set by terminal nodes) ──
     final_destination: TriageDestination | None = None
@@ -218,6 +261,36 @@ class JobState(BaseModel):
         if not self.resume_versions:
             return 1
         return self.resume_versions[-1].version + 1
+
+    @property
+    def evaluated_versions(self) -> list[ResumeVersion]:
+        """Per-version evaluation records, with pre-ADR-0018 fallback.
+
+        States created before ``version_history`` existed (e.g. resumed
+        checkpoints, --step debugging on old folders) have an empty history.
+        In that case the current latest_resume + latest_grade + verification
+        are treated as the single evaluated version.
+        """
+        if self.version_history:
+            return self.version_history
+        latest = self.latest_resume
+        if latest is not None and self.latest_grade is not None:
+            return [
+                ResumeVersion(
+                    version=latest.version,
+                    path=latest.path,
+                    grade=self.latest_grade.grade,
+                    verified=(
+                        self.verification.verified if self.verification else None
+                    ),
+                    truthfulness_issues=(
+                        [c.claim for c in self.verification.unverifiable_claims]
+                        if self.verification
+                        else []
+                    ),
+                )
+            ]
+        return []
 
 
 # ─── Free functions: constructors ─────────────────────────────────────────
@@ -367,6 +440,36 @@ def with_triage(state: JobState, d: TriageDestination) -> JobState:
     return state.model_copy(update={"triage": d})
 
 
-def with_optimize_can_improve(state: JobState, can_improve: bool) -> JobState:
-    """Return a new JobState with the optimize_can_improve flag set."""
-    return state.model_copy(update={"optimize_can_improve": can_improve})
+def with_customizer_can_improve(state: JobState, can_improve: bool) -> JobState:
+    """Return a new JobState with the customizer_can_improve flag set."""
+    return state.model_copy(update={"customizer_can_improve": can_improve})
+
+
+def passing_versions(
+    versions: list[ResumeVersion], threshold: float
+) -> list[ResumeVersion]:
+    """All versions passing both gates, best first (ADR-0018).
+
+    Passing = grade >= threshold AND verified is True. Ordered by grade
+    descending, ties broken by earlier version. The final-veracity cascade
+    walks this list until one version survives the final gate.
+    """
+    candidates = [
+        v
+        for v in versions
+        if v.grade is not None and v.grade >= threshold and v.verified is True
+    ]
+    return sorted(candidates, key=lambda v: (-v.grade, v.version))
+
+
+def select_best_passing(
+    versions: list[ResumeVersion], threshold: float
+) -> ResumeVersion | None:
+    """Select the best passing version from evaluation history (ADR-0018).
+
+    Passing = grade >= threshold AND verified is True. Among candidates the
+    highest grade wins; ties go to the earlier version. Returns None when no
+    version passes both gates.
+    """
+    candidates = passing_versions(versions, threshold)
+    return candidates[0] if candidates else None

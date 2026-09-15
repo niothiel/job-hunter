@@ -1,10 +1,11 @@
 """Tests for graph.py — routing functions and full graph topology.
 
-Tests the four routing functions in isolation, then exercises the full
+Tests the routing functions in isolation, then exercises the full
 compiled graph with FakeLLM to verify edges and conditional routing work
 end-to-end.
 """
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,10 @@ from langgraph.graph import START, END, StateGraph
 
 from pipeline.infrastructure.graph import (
     build_job_graph,
+    route_after_customize,
+    route_after_finalize,
     route_after_jd_grade,
-    route_after_truthfulness,
-    route_optimize,
+    route_should_continue,
     route_triage,
 )
 from pipeline.infrastructure.state import (
@@ -27,6 +29,8 @@ from pipeline.infrastructure.state import (
     TriageDestination,
     Verification,
 )
+
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
 
 # ─── Routing function tests ──────────────────────────────────────────────────
@@ -67,34 +71,45 @@ def test_route_triage_none_defaults_trash():
     assert route_triage(state) == "trash"
 
 
-def test_route_optimize_continue():
-    state = JobState(slug="co", optimize_can_improve=True)
-    assert route_optimize(state) == "continue"
+def test_route_after_customize_evaluate():
+    state = JobState(slug="co", customizer_draft_unchanged=False)
+    assert route_after_customize(state) == "evaluate"
 
 
-def test_route_optimize_done():
-    state = JobState(slug="co", optimize_can_improve=False)
-    assert route_optimize(state) == "done"
+def test_route_after_customize_skip_on_identical_draft():
+    """Byte-identical revision + NO -> skip grade/veracity for the duplicate."""
+    state = JobState(slug="co", customizer_draft_unchanged=True)
+    assert route_after_customize(state) == "skip_evaluation"
 
 
-def test_route_optimize_none_defaults_done():
+def test_route_after_customize_default_evaluates():
     state = JobState(slug="co")
-    assert route_optimize(state) == "done"
+    assert route_after_customize(state) == "evaluate"
 
 
-def test_route_after_truthfulness_verified():
-    state = JobState(slug="co", verification=Verification(verified=True))
-    assert route_after_truthfulness(state) == "verified"
+def test_route_should_continue_continue():
+    state = JobState(slug="co", should_continue=True)
+    assert route_should_continue(state) == "continue"
 
 
-def test_route_after_truthfulness_unverified():
-    state = JobState(slug="co", verification=Verification(verified=False))
-    assert route_after_truthfulness(state) == "unverified"
+def test_route_should_continue_done():
+    state = JobState(slug="co", should_continue=False)
+    assert route_should_continue(state) == "done"
 
 
-def test_route_after_truthfulness_none_defaults_unverified():
+def test_route_should_continue_none_defaults_done():
     state = JobState(slug="co")
-    assert route_after_truthfulness(state) == "unverified"
+    assert route_should_continue(state) == "done"
+
+
+def test_route_after_finalize_selected():
+    state = JobState(slug="co", selected_version=2)
+    assert route_after_finalize(state) == "ready"
+
+
+def test_route_after_finalize_no_selection():
+    state = JobState(slug="co")
+    assert route_after_finalize(state) == "rejected"
 
 
 # ─── Full graph topology tests ───────────────────────────────────────────────
@@ -127,7 +142,7 @@ def _grade_json(grade, assessments=None):
         {"requirement": req, "tier": tier, "assessment": a, "comment": c}
         for req, tier, a, c in assessments
     ]
-    return json.dumps({"grade": grade, "per_criterion": per_criterion, "model": "swe-1.7"})
+    return json.dumps({"grade": grade, "per_criterion": per_criterion, "model": DEFAULT_LLM_MODEL})
 
 
 def _jd_reasoning_json(assessments=None):
@@ -162,9 +177,9 @@ def _jd_scoring_json(grade, assessments=None, justification="Fit."):
 def _create_source_files(tmp_paths):
     """Create minimal base resume + LinkedIn for prompt inlining."""
     tmp_paths.base_resume.parent.mkdir(parents=True, exist_ok=True)
-    tmp_paths.base_resume.write_text("# Sahil Talwar\n\nSoftware Engineer\n", encoding="utf-8")
+    tmp_paths.base_resume.write_text("# Squall Leonhart\n\nSoftware Engineer\n", encoding="utf-8")
     tmp_paths.linkedin_experience.parent.mkdir(parents=True, exist_ok=True)
-    tmp_paths.linkedin_experience.write_text("# Sahil Talwar — Full Experience\n\n## Experience\n", encoding="utf-8")
+    tmp_paths.linkedin_experience.write_text("# Squall Leonhart — Full Experience\n\n## Experience\n", encoding="utf-8")
 
 
 def _verification_json(verified=True, claims=None):
@@ -225,10 +240,10 @@ def test_full_graph_clearance_to_trash(tmp_paths, fake_llm, logger):
 
 
 def test_full_graph_low_jd_grade_to_trash(tmp_paths, fake_llm, logger):
-    """JD grade < 6 -> trashed at step5."""
+    """JD grade < 6 -> trashed at step5. A core GAP deterministically
+    scores 0.0."""
     _create_source_files(tmp_paths)
     fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json([("Rust", "core", "GAP", "No Rust")]))
-    fake_llm.add_response("JD Grading Scoring", _jd_scoring_json(3.0, [("Rust", "core", "GAP", "No Rust")], "Poor fit."))
     (tmp_paths.listings / "bad-co").mkdir(parents=True)
     (tmp_paths.listings / "bad-co" / "[TBD] job-description.md").write_text("JD text")
 
@@ -238,14 +253,44 @@ def test_full_graph_low_jd_grade_to_trash(tmp_paths, fake_llm, logger):
     result = graph.invoke(state, config=config)
     final = JobState(**result)
     assert final.final_destination == TriageDestination.TRASH
+    assert final.jd_grade.grade == 0.0
+
+
+def test_full_graph_jd_legacy_scoring_path(tmp_paths, fake_llm, logger):
+    """deterministic_scoring=False: the legacy two-call path is used —
+    the second LLM call's grade drives routing."""
+    _create_source_files(tmp_paths)
+    fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json([("Rust", "core", "GAP", "No Rust")]))
+    fake_llm.add_response("JD Grading Scoring", _jd_scoring_json(3.0, [("Rust", "core", "GAP", "No Rust")], "Poor fit."))
+    (tmp_paths.listings / "bad-co").mkdir(parents=True)
+    (tmp_paths.listings / "bad-co" / "[TBD] job-description.md").write_text("JD text")
+
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": fake_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False, deterministic_scoring=False),
+            "paths": tmp_paths,
+        }
+    }
+    graph = build_job_graph(checkpointer=None)
+    state = JobState(slug="bad-co", url="https://x.com", jd_text="JD text")
+    result = graph.invoke(state, config=config)
+    final = JobState(**result)
+    assert final.final_destination == TriageDestination.TRASH
     assert final.jd_grade.grade == 3.0
 
 
 def test_full_graph_mid_jd_grade_to_rejected_job_fit(tmp_paths, fake_llm, logger):
-    """JD grade 6-7.9 -> rejected/[JOB-FIT]."""
+    """JD grade in [6, 7.0) -> rejected/[JOB-FIT]. 1 DIRECT_HIT + 2 ADDRESSED
+    deterministically scores 6.97 — below the 7.0 proceed threshold."""
     _create_source_files(tmp_paths)
-    fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json([("Python", "core", "ADDRESSED", "Has Python")]))
-    fake_llm.add_response("JD Grading Scoring", _jd_scoring_json(7.0, [("Python", "core", "ADDRESSED", "Has Python")], "Decent fit."))
+    fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json([
+        ("Python", "core", "DIRECT_HIT", "Has Python"),
+        ("Go", "core", "ADDRESSED", "Adjacent experience"),
+        ("AWS", "core", "ADDRESSED", "Some cloud"),
+    ]))
     (tmp_paths.listings / "mid-co").mkdir(parents=True)
     (tmp_paths.listings / "mid-co" / "[TBD] job-description.md").write_text("JD text")
 
@@ -260,25 +305,21 @@ def test_full_graph_mid_jd_grade_to_rejected_job_fit(tmp_paths, fake_llm, logger
 def test_full_graph_pass_to_ready(tmp_paths, fake_llm, logger):
     """Full pass: JD grade 8+ -> customize -> grade 9+ -> verified -> ready.
 
-    Uses dry_run=True for the customize/grade steps (no real base resume),
-    but we pre-create the drafts folder and resume file so step9 and step10
-    can find them. We use dry_run=False for the terminal move.
-
-    Actually, we can't mix dry_run within a single graph run. So we use
-    dry_run=False throughout and pre-create all needed files.
+    The customizer answers NO (byte-identical v1 is a valid first draft),
+    veracity verifies, should_continue routes done, the final truthfulness
+    gate re-verifies v1, and finalize ships it.
     """
     # FakeLLM responses:
-    # 1. JD grading two-call -> grade 8.5
-    # 2. Customize -> "Done" (we pre-create the resume file)
-    # 3. Resume grading -> grade 9.5 JSON
-    # 4. Optimize "can improve?" -> NO (exit loop)
-    # 5. Truthfulness -> verified=True JSON
+    # 1. JD grading reasoning -> all DIRECT_HIT -> deterministic grade 10.0
+    # 2. Customize -> "Done\nNO" (FakeLLM doesn't edit; unchanged v1 is fine)
+    # 3. Resume grading reasoning -> all DIRECT_HIT -> grade 10.0
+    # 4. In-loop truthfulness -> verified=True JSON
+    # 5. Final truthfulness gate -> verified=True JSON
     fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
-    fake_llm.add_response("JD Grading Scoring", _jd_scoring_json(8.5, justification="Good fit."))
-    fake_llm.add_response("customizing", "Done")
+    fake_llm.add_response("customizing", "Done.\n\nNO")
     fake_llm.add_response("Be realistically harsh", _reasoning_json())
-    fake_llm.add_response("You are grading resume v", _grade_json(9.5))
-    fake_llm.add_response("YES or NO", "NO")
+    fake_llm.add_response("You are a truthfulness", _classification_json([]))
+    fake_llm.add_response("You are verifying resume", _verification_json(verified=True))
     fake_llm.add_response("You are a truthfulness", _classification_json([]))
     fake_llm.add_response("You are verifying resume", _verification_json(verified=True))
 
@@ -301,72 +342,79 @@ def test_full_graph_pass_to_ready(tmp_paths, fake_llm, logger):
     final = JobState(**result)
 
     assert final.final_destination == TriageDestination.READY
-    assert final.jd_grade.grade == 8.5
+    assert final.jd_grade.grade == 10.0
     assert final.latest_grade is not None
-    assert final.latest_grade.grade == 9.5
+    assert final.latest_grade.grade == 10.0
     assert final.verification is not None
     assert final.verification.verified is True
     assert len(final.resume_versions) == 1
+    assert len(final.version_history) == 1
+    assert final.version_history[0].verified is True
+    assert final.selected_version == 1
+    assert final.final_verification is not None
+    assert final.final_verification.verified is True
     # Folder moved to ready/
     assert (tmp_paths.ready / "good-co").exists()
 
 
-def test_full_graph_optimize_cycle(tmp_paths, fake_llm, logger):
-    """Optimize cycle: grade 7 -> improve YES -> grade 9 -> ready.
+class SequentialEditingLLM:
+    """Sequential FakeLLM that also edits the draft file on customize calls.
 
-    The FakeLLM needs to return different responses on successive calls
-    to the same prompt substring. We use ordered responses: the first
-    "Be realistically harsh" returns grade 7, the second returns grade 9.
-
-    FakeLLM checks keys in insertion order and returns the first match.
-    To return different responses on successive calls, we need to use
-    distinct prompt substrings or a custom FakeLLM. Since the grading
-    prompt is the same both times, we'll use a stateful fake.
+    Returns canned responses in sequence (first-match, advancing). When a
+    prompt contains a "stages/2_drafts/.../resume-vN.md" path, appends a
+    marker line to that file — simulating the customizer's in-place edit
+    so the YES/NO outcome validation sees a real diff.
     """
-    from pipeline.infrastructure.llm_interface import FakeLLM
 
-    class SequentialFakeLLM:
-        """Returns canned responses in sequence, matching by substring."""
+    def __init__(self, hunter_dir):
+        self.hunter_dir = Path(hunter_dir)
+        self.responses: list[tuple[str, str, bool]] = []
+        self.calls: list[str] = []
+        self._idx = 0
 
-        def __init__(self):
-            self.responses: list[tuple[str, str]] = []
-            self.calls: list[str] = []
-            self._idx = 0
+    def add_response(self, key: str, response: str, *, edit: bool = True):
+        self.responses.append((key, response, edit))
 
-        def add_response(self, key: str, response: str):
-            self.responses.append((key, response))
+    def __call__(self, prompt, *, model, timeout, workspace, retries=2, retry_delay=5,
+                 export_path=None, permission_mode="dangerous", config_path=None,
+                 job_slug=None, step=None, alive_check_seconds=None):
+        self.calls.append(prompt)
+        for i, (key, resp, do_edit) in enumerate(self.responses):
+            if i < self._idx:
+                continue
+            if key in prompt:
+                self._idx = i + 1
+                if do_edit:
+                    m = re.search(r"Edit only (stages/2_drafts/[^\n]+?resume-v\d+\.md)", prompt)
+                    if m:
+                        p = self.hunter_dir / m.group(1)
+                        p.write_text(
+                            p.read_text(encoding="utf-8") + f"\n<!-- edit {i} -->\n",
+                            encoding="utf-8",
+                        )
+                return resp, None
+        return None, "No matching response"
 
-        def __call__(self, prompt, *, model, timeout, workspace, retries=2, retry_delay=5,
-                     export_path=None, permission_mode="dangerous", config_path=None,
-                     job_slug=None, step=None):
-            self.calls.append(prompt)
-            for i, (key, resp) in enumerate(self.responses):
-                if i < self._idx:
-                    continue
-                if key in prompt:
-                    self._idx = i + 1
-                    return resp, None
-            return None, "No matching response"
 
-    seq_llm = SequentialFakeLLM()
-    # 1. JD grading two-call -> 8.5
+def test_full_graph_customize_loop(tmp_paths, logger):
+    """Customize loop: v1 grades below threshold (veracity skipped) -> YES
+    -> v2 grades passing -> verified -> ready. Veracity runs inside the
+    loop on every version."""
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    # 1. JD grading reasoning -> all DIRECT_HIT -> deterministic 10.0
     seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
-    seq_llm.add_response("JD Grading Scoring", _jd_scoring_json(8.5, justification="Good fit."))
-    # 2. Customize v1 -> "Done"
-    seq_llm.add_response("customizing", "Done")
-    # 3. Resume grading v1 -> reasoning + scoring (grade 7.0, below threshold)
+    # 2. Customize v1 -> edits + YES
+    seq_llm.add_response("customizing", "Done.\n\nYES")
+    # 3. Resume grading v1 -> core GAP -> deterministic 0.0 (veracity skipped)
     seq_llm.add_response("Be realistically harsh", _reasoning_json([("Rust", "core", "GAP", "Missing")]))
-    seq_llm.add_response("You are grading resume v", _grade_json(7.0, [("Rust", "core", "GAP", "Missing")]))
-    # 4. Optimize "can improve?" -> YES
-    seq_llm.add_response("YES or NO", "YES")
-    # 5. Optimize v2 -> "Done"
-    seq_llm.add_response("improving", "Done")
-    # 6. Resume grading v2 -> reasoning + scoring (grade 9.5)
+    # 4. should_continue: YES -> customize v2 -> edits + NO
+    seq_llm.add_response("customizing", "Done.\n\nNO")
+    # 5. Resume grading v2 -> all DIRECT_HIT -> deterministic 10.0
     seq_llm.add_response("Be realistically harsh", _reasoning_json())
-    seq_llm.add_response("You are grading resume v", _grade_json(9.5))
-    # 7. Optimize "can improve?" -> NO (exit)
-    seq_llm.add_response("YES or NO", "NO")
-    # 8. Truthfulness -> classification + synthesis (verified)
+    # 6. Veracity v2 -> verified; should_continue: NO + verified -> done
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # 7. Final truthfulness gate on v2 -> verified
     seq_llm.add_response("You are a truthfulness", _classification_json([]))
     seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
 
@@ -377,18 +425,6 @@ def test_full_graph_optimize_cycle(tmp_paths, fake_llm, logger):
     job_dir = tmp_paths.listings / "cycle-co"
     job_dir.mkdir(parents=True)
     (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nWe need Python + Rust.")
-
-    # We need to pre-create the v2 resume file (FakeLLM doesn't write files)
-    # But step6 runs before we can intercept. We'll use a node_config with
-    # dry_run=False and pre-create the drafts folder with the v2 file after
-    # step6 would have run. Actually, we can't intercept mid-graph.
-    #
-    # Solution: pre-create both resume files in drafts/. Step6_customize
-    # for v1 pre-copies base resume (overwrites if exists). For v2, it
-    # checks if the file exists after the LLM call. We pre-create v2.
-    drafts_dir = tmp_paths.drafts / "cycle-co"
-    drafts_dir.mkdir(parents=True)
-    (drafts_dir / "[TBD] resume-v2.md").write_text("# Resume v2\n", encoding="utf-8")
 
     from pipeline.infrastructure.config import PipelineConfig
     config = {
@@ -408,44 +444,192 @@ def test_full_graph_optimize_cycle(tmp_paths, fake_llm, logger):
     assert len(final.resume_versions) == 2
     assert final.resume_versions[0].version == 1
     assert final.resume_versions[1].version == 2
-    assert final.latest_grade.grade == 9.5
+    assert final.latest_grade.grade == 10.0
+    # v1 evaluated (grade 0.0, veracity skipped) + v2 evaluated (verified)
+    assert len(final.version_history) == 2
+    assert final.version_history[0].grade == 0.0
+    assert final.version_history[0].verified is None
+    assert final.version_history[1].verified is True
+    assert final.selected_version == 2
+    assert final.final_verification.verified is True
 
 
-def test_full_graph_unverified_to_rejected_resume(tmp_paths, fake_llm, logger):
-    """Grade 9+ but truthfulness fails -> rejected/[RESUME]."""
-    _create_source_files(tmp_paths)
-    fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
-    fake_llm.add_response("JD Grading Scoring", _jd_scoring_json(8.5, justification="Good fit."))
-    fake_llm.add_response("customizing", "Done")
-    fake_llm.add_response("Be realistically harsh", _reasoning_json())
-    fake_llm.add_response("You are grading resume v", _grade_json(9.5))
-    fake_llm.add_response("YES or NO", "NO")
-    fake_llm.add_response("You are a truthfulness", _classification_json([
+def test_full_graph_final_veracity_cascade(tmp_paths, logger):
+    """The selected version fails the FINAL gate -> the next-best passing
+    version is verified and ships instead (ADR-0018 fallback)."""
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
+    # v1: customize + YES -> grade 9.3 (preferred GAP) -> in-loop verified
+    seq_llm.add_response("customizing", "Done.\n\nYES")
+    seq_llm.add_response("Be realistically harsh", _reasoning_json([
+        ("Python", "core", "DIRECT_HIT", "Strong"),
+        ("Kubernetes", "preferred", "GAP", "Not mentioned"),
+    ]))
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # v2: customize + NO -> grade 10.0 (all DIRECT_HIT) -> in-loop verified
+    seq_llm.add_response("customizing", "Done.\n\nNO")
+    seq_llm.add_response("Be realistically harsh", _reasoning_json())
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # Final gate: v2 (best grade) fails; v1 passes -> ships v1
+    seq_llm.add_response("You are a truthfulness", _classification_json([
         {"claim": "Fabricated skill", "location": "Skills", "bucket": "FABRICATED",
          "source_checked": "both", "reason": "Not in either source."}
     ]))
-    fake_llm.add_response("You are verifying resume", _verification_json(verified=False, claims=["Fabricated skill"]))
+    seq_llm.add_response("You are verifying resume",
+                         _verification_json(verified=False, claims=["Fabricated skill"]))
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
 
+    _create_source_files(tmp_paths)
+    job_dir = tmp_paths.listings / "cascade-co"
+    job_dir.mkdir(parents=True)
+    (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nJD text")
+
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": seq_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False),
+            "paths": tmp_paths,
+        }
+    }
+    graph = build_job_graph(checkpointer=None)
+    state = JobState(slug="cascade-co", url="https://x.com", jd_text="JD text")
+    result = graph.invoke(state, config=config)
+    final = JobState(**result)
+
+    assert final.final_destination == TriageDestination.READY
+    assert final.selected_version == 1
+    assert final.final_failed_versions == [2]
+    # The shipped folder contains v1's resume, not v2's
+    ready_files = [p.name for p in (tmp_paths.ready / "cascade-co").glob("*resume-v*.md")]
+    assert ready_files == ["[9.3] resume-v1.md"]
+
+
+def test_full_graph_veracity_failure_held_for_review(tmp_paths, logger):
+    """Versions that grade >= 9 but fail veracity: repair revisions are
+    forced (NO + unverified -> continue) until budget exhausts, then the
+    job is held for human review (error) rather than silently rejected."""
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
+    unverified = _verification_json(verified=False, claims=["Fabricated skill"])
+    classification = _classification_json([
+        {"claim": "Fabricated skill", "location": "Skills", "bucket": "FABRICATED",
+         "source_checked": "both", "reason": "Not in either source."}
+    ])
+    for _ in range(3):
+        # Each version: customize edits + NO -> grade 10.0 -> veracity fails
+        seq_llm.add_response("customizing", "Done.\n\nNO")
+        seq_llm.add_response("Be realistically harsh", _reasoning_json())
+        seq_llm.add_response("You are a truthfulness", classification)
+        seq_llm.add_response("You are verifying resume", unverified)
+
+    _create_source_files(tmp_paths)
     job_dir = tmp_paths.listings / "unverified-co"
     job_dir.mkdir(parents=True)
     (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nJD text")
 
-    config = _make_node_config(tmp_paths, fake_llm, logger, dry_run=False)
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": seq_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False),
+            "paths": tmp_paths,
+        }
+    }
     graph = build_job_graph(checkpointer=None)
     state = JobState(slug="unverified-co", url="https://x.com", jd_text="JD text")
+    with pytest.raises(RuntimeError, match="human review"):
+        graph.invoke(state, config=config)
+    # Held for review: the folder stays in drafts/
+    assert (tmp_paths.drafts / "unverified-co").exists()
+
+
+def test_full_graph_low_grades_to_rejected_resume(tmp_paths, logger):
+    """All versions grade below threshold (veracity skipped each time) ->
+    budget exhausts -> no passing version, no veracity failures ->
+    rejected/[RESUME]."""
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
+    for _ in range(3):
+        seq_llm.add_response("customizing", "Done.\n\nYES")
+        # core GAP -> deterministic 0.0 -> below threshold
+        seq_llm.add_response("Be realistically harsh", _reasoning_json([("Rust", "core", "GAP", "Missing")]))
+
+    _create_source_files(tmp_paths)
+    job_dir = tmp_paths.listings / "lowgrade-co"
+    job_dir.mkdir(parents=True)
+    (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nJD text")
+
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": seq_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False),
+            "paths": tmp_paths,
+        }
+    }
+    graph = build_job_graph(checkpointer=None)
+    state = JobState(slug="lowgrade-co", url="https://x.com", jd_text="JD text")
     result = graph.invoke(state, config=config)
     final = JobState(**result)
 
     assert final.final_destination == TriageDestination.REJECTED_RESUME
-    assert final.verification.verified is False
-    assert len(final.verification.unverifiable_claims) == 1
+    assert len(final.resume_versions) == 3
+    assert len(final.version_history) == 3
+    assert all(v.verified is None for v in final.version_history)
+    assert (tmp_paths.rejected / "[RESUME] lowgrade-co").exists()
+
+
+def test_full_graph_unchanged_stop_skips_evaluation(tmp_paths, logger):
+    """Customizer v2 says NO without changing the draft -> the byte-identical
+    duplicate is skipped (not re-graded/verified) and v1's evaluation stands."""
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
+    seq_llm.add_response("customizing", "Done.\n\nYES")   # v1: edits + YES
+    seq_llm.add_response("Be realistically harsh", _reasoning_json())
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # v2: NO and no edit -> byte-identical -> skip_evaluation -> done
+    seq_llm.add_response("customizing", "Done.\n\nNO", edit=False)
+    # Final truthfulness gate on v1 -> verified
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+
+    _create_source_files(tmp_paths)
+    job_dir = tmp_paths.listings / "skip-co"
+    job_dir.mkdir(parents=True)
+    (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nJD text")
+
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": seq_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False),
+            "paths": tmp_paths,
+        }
+    }
+    graph = build_job_graph(checkpointer=None)
+    state = JobState(slug="skip-co", url="https://x.com", jd_text="JD text")
+    result = graph.invoke(state, config=config)
+    final = JobState(**result)
+
+    assert final.final_destination == TriageDestination.READY
+    assert len(final.resume_versions) == 1  # identical v2 dropped
+    assert len(final.version_history) == 1
+    assert final.selected_version == 1
 
 
 def test_full_graph_dry_run_no_moves(tmp_paths, fake_llm, logger):
     """Dry run: graph executes but no files are moved."""
     _create_source_files(tmp_paths)
     fake_llm.add_response("JD Grading Reasoning", _jd_reasoning_json([("Rust", "core", "GAP", "No Rust")]))
-    fake_llm.add_response("JD Grading Scoring", _jd_scoring_json(3.0, [("Rust", "core", "GAP", "No Rust")], "Poor fit."))
     (tmp_paths.listings / "dry-co").mkdir(parents=True)
     (tmp_paths.listings / "dry-co" / "[TBD] job-description.md").write_text("JD text")
 
@@ -461,3 +645,113 @@ def test_full_graph_dry_run_no_moves(tmp_paths, fake_llm, logger):
     # Listing not moved (dry_run)
     assert (tmp_paths.listings / "dry-co").exists()
     assert not (tmp_paths.trash / "dry-co").exists()
+
+
+def test_full_graph_all_final_gate_failures_held_for_review(tmp_paths, logger):
+    """All candidates pass in-loop veracity but ALL fail the final gate ->
+    held for human review (not silently rejected).
+
+    This is distinct from test_full_graph_veracity_failure_held_for_review
+    (which tests in-loop veracity failure) — here every version passes
+    in-loop, so they're all final candidates, but the independent final
+    gate rejects them all.
+    """
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
+    # v1: customize + YES -> grade 10.0 -> in-loop verified
+    seq_llm.add_response("customizing", "Done.\n\nYES")
+    seq_llm.add_response("Be realistically harsh", _reasoning_json())
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # v2: customize + NO -> grade 10.0 -> in-loop verified
+    seq_llm.add_response("customizing", "Done.\n\nNO")
+    seq_llm.add_response("Be realistically harsh", _reasoning_json())
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # Final gate: v2 (best grade) fails, v1 also fails -> all fail -> human review
+    fail_classification = _classification_json([
+        {"claim": "Fabricated skill", "location": "Skills", "bucket": "FABRICATED",
+         "source_checked": "both", "reason": "Not in either source."}
+    ])
+    fail_verification = _verification_json(verified=False, claims=["Fabricated skill"])
+    # v2 final gate: fail
+    seq_llm.add_response("You are a truthfulness", fail_classification)
+    seq_llm.add_response("You are verifying resume", fail_verification)
+    # v1 final gate: also fail
+    seq_llm.add_response("You are a truthfulness", fail_classification)
+    seq_llm.add_response("You are verifying resume", fail_verification)
+
+    _create_source_files(tmp_paths)
+    job_dir = tmp_paths.listings / "all-final-fail-co"
+    job_dir.mkdir(parents=True)
+    (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nJD text")
+
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": seq_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False),
+            "paths": tmp_paths,
+        }
+    }
+    graph = build_job_graph(checkpointer=None)
+    state = JobState(slug="all-final-fail-co", url="https://x.com", jd_text="JD text")
+    with pytest.raises(RuntimeError, match="human review"):
+        graph.invoke(state, config=config)
+    # Held for review: the folder stays in drafts/
+    assert (tmp_paths.drafts / "all-final-fail-co").exists()
+
+
+def test_full_graph_multiple_verified_picks_best(tmp_paths, logger):
+    """Two versions both pass in-loop veracity; the final gate picks the
+    higher-grade v2 directly (no cascade needed).
+
+    This is the normal multi-candidate path — distinct from the cascade
+    test where the best candidate fails and falls back.
+    """
+    seq_llm = SequentialEditingLLM(tmp_paths.hunter_dir)
+    seq_llm.add_response("JD Grading Reasoning", _jd_reasoning_json())
+    # v1: customize + YES -> grade 9.3 (preferred GAP) -> in-loop verified
+    seq_llm.add_response("customizing", "Done.\n\nYES")
+    seq_llm.add_response("Be realistically harsh", _reasoning_json([
+        ("Python", "core", "DIRECT_HIT", "Strong"),
+        ("Kubernetes", "preferred", "GAP", "Not mentioned"),
+    ]))
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # v2: customize + NO -> grade 10.0 -> in-loop verified
+    seq_llm.add_response("customizing", "Done.\n\nNO")
+    seq_llm.add_response("Be realistically harsh", _reasoning_json())
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+    # Final gate: v2 (best grade) passes directly
+    seq_llm.add_response("You are a truthfulness", _classification_json([]))
+    seq_llm.add_response("You are verifying resume", _verification_json(verified=True))
+
+    _create_source_files(tmp_paths)
+    job_dir = tmp_paths.listings / "multi-verified-co"
+    job_dir.mkdir(parents=True)
+    (job_dir / "[TBD] job-description.md").write_text("<!-- url: https://x.com -->\n\nJD text")
+
+    from pipeline.infrastructure.config import PipelineConfig
+    config = {
+        "configurable": {
+            "llm": seq_llm,
+            "logger": logger,
+            "config": PipelineConfig(dry_run=False),
+            "paths": tmp_paths,
+        }
+    }
+    graph = build_job_graph(checkpointer=None)
+    state = JobState(slug="multi-verified-co", url="https://x.com", jd_text="JD text")
+    result = graph.invoke(state, config=config)
+    final = JobState(**result)
+
+    assert final.final_destination == TriageDestination.READY
+    assert final.selected_version == 2  # higher grade
+    assert final.final_failed_versions == []
+    assert final.final_verification.verified is True
+    # v1 was pruned, v2 shipped
+    ready_files = [p.name for p in (tmp_paths.ready / "multi-verified-co").glob("*resume-v*.md")]
+    assert ready_files == ["[10.0] resume-v2.md"]

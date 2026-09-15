@@ -28,9 +28,9 @@ confirm that every claim on the resume is truthful.
 There are **two co-equal sources of truth**. A claim is verified if it appears
 in **either** source — you do not need it to appear in both.
 
-1. **`profile/base-resume/base-resume.md`** — the base/generic resume.
+1. **`profile/base-resume/`** — the base/generic resume.
    The user wrote this directly. It is trusted.
-2. **`profile/full-experience/full-experience.md`** — the full LinkedIn
+2. **`profile/full-experience/`** — the full LinkedIn
    career history. The user wrote this directly. It is trusted.
 
 Both sources are equally valid. Do not treat one as more authoritative than
@@ -98,8 +98,8 @@ or explore hypotheticals. Aim for under 500 tokens of output.
 
 Read all three documents:
 1. The customized resume at `drafts/<company-role>/[score] resume-vN.md`
-2. The base resume at `profile/base-resume/base-resume.md`
-3. The LinkedIn experience at `profile/full-experience/full-experience.md`
+2. The base resume at `profile/base-resume/`
+3. The LinkedIn experience at `profile/full-experience/`
 
 Do not begin assessing claims until all three are loaded.
 

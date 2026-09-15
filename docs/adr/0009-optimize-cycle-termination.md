@@ -1,6 +1,7 @@
 # Optimize cycle termination with LLM improvement check
 
-**Status:** accepted
+**Status:** superseded by ADR-0018 (the separate "can you improve?" LLM call
+is replaced by the customizer's YES/NO outcome on each revision)
 
 The optimize loop (step6 → step7 → step8 → back to step6 or forward to
 step9) terminates when: (1) the grade is ≥ 9 AND no core gaps, (2) the

@@ -15,7 +15,7 @@ Usage:
     from llm import call_llm, LLMError
 
     try:
-        output = call_llm("Grade this resume...", model="grader-model", timeout=120)
+        output = call_llm("Grade this resume...", model=DEFAULT_LLM_MODEL, timeout=120)
     except LLMError as e:
         print(f"LLM call failed: {e}")
 """
@@ -27,6 +27,8 @@ import tempfile
 import time
 import structlog
 from pathlib import Path
+
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
 
 class LLMError(Exception):
@@ -123,7 +125,7 @@ def _extract_thinking_from_export(export_path: str) -> str | None:
     return None
 
 
-def call_llm(prompt: str, *, model="customizer-model", timeout=120,
+def call_llm(prompt: str, *, model=DEFAULT_LLM_MODEL, timeout=120,
              workspace=None, retries=2, retry_delay=5,
              export_path=None, permission_mode="dangerous",
              config_path=None, alive_check_seconds=10) -> str:
@@ -131,7 +133,7 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
 
     Args:
         prompt: The prompt text to send to the model.
-        model: Model identifier (e.g. "customizer-model", "grader-model").
+        model: Model identifier (e.g. DEFAULT_LLM_MODEL).
         timeout: Maximum seconds to wait for the call to complete.
         workspace: Working directory for the devin -p call (default: cwd).
             The grader calls use workspace=.grading/ or .veracity/ respectively,
@@ -285,7 +287,7 @@ def call_llm(prompt: str, *, model="customizer-model", timeout=120,
                 pass
 
 
-def call_llm_safe(prompt: str, *, model="customizer-model", timeout=120,
+def call_llm_safe(prompt: str, *, model=DEFAULT_LLM_MODEL, timeout=120,
                   workspace=None, retries=2, retry_delay=5,
                   export_path=None, permission_mode="dangerous",
                   config_path=None, alive_check_seconds=10) -> tuple[str | None, LLMError | None]:

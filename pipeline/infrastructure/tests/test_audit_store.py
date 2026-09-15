@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from pipeline.infrastructure.audit_store import AuditStore
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
 
 @pytest.fixture
@@ -39,9 +40,12 @@ class TestSchema:
         assert "timestamp" in cols
         assert "job_slug" in cols
         assert "step" in cols
+        assert "call_id" in cols
         assert "model" in cols
         assert "prompt" in cols
         assert "response" in cols
+        assert "error" in cols
+        assert "status" in cols
         assert "params" in cols
         assert "duration_ms" in cols
         conn.close()
@@ -55,6 +59,52 @@ class TestSchema:
         a2 = AuditStore(db)
         a2.close()
 
+    def test_migrates_old_schema(self, tmp_path):
+        """An old-schema DB (no call_id/status/error) gets migrated on init."""
+        db = str(tmp_path / "jobs.db")
+        # Create an old-schema table without the new columns.
+        conn = sqlite3.connect(db)
+        conn.executescript("""
+            CREATE TABLE llm_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                job_slug TEXT,
+                step TEXT,
+                model TEXT,
+                prompt TEXT,
+                response TEXT,
+                params TEXT,
+                duration_ms INTEGER
+            );
+        """)
+        conn.execute(
+            "INSERT INTO llm_calls (timestamp, step, model, prompt, response, "
+            "params, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("2026-01-01T00:00:00Z", "grade_jd", "x", "p", "r", None, 100),
+        )
+        conn.commit()
+        conn.close()
+
+        # Opening with AuditStore should add the new columns without error.
+        a = AuditStore(db)
+        a.close()
+
+        conn = sqlite3.connect(db)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(llm_calls)")}
+        conn.close()
+        assert "call_id" in cols
+        assert "error" in cols
+        assert "status" in cols
+        # Old row should still be there.
+        a2 = AuditStore(db)
+        rows = a2.query_llm_calls("co")
+        a2.close()
+        # query by slug returns nothing (slug was None), but the row exists.
+        conn = sqlite3.connect(db)
+        count = conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0]
+        conn.close()
+        assert count == 1
+
 
 # ─── log_llm_call ────────────────────────────────────────────────────────────
 
@@ -64,7 +114,7 @@ class TestLogLlmCall:
         audit.log_llm_call(
             job_slug="google-engineer",
             step="grade_jd",
-            model="customizer-model",
+            model=DEFAULT_LLM_MODEL,
             prompt="Grade this JD...",
             response="GRADE: 8.5",
             params={"timeout": 120, "retries": 2},
@@ -75,7 +125,7 @@ class TestLogLlmCall:
         call = calls[0]
         assert call["job_slug"] == "google-engineer"
         assert call["step"] == "grade_jd"
-        assert call["model"] == "customizer-model"
+        assert call["model"] == DEFAULT_LLM_MODEL
         assert call["prompt"] == "Grade this JD..."
         assert call["response"] == "GRADE: 8.5"
         assert json.loads(call["params"]) == {"timeout": 120, "retries": 2}
@@ -85,7 +135,7 @@ class TestLogLlmCall:
     def test_insert_with_none_response(self, audit):
         """Error calls log response=None."""
         audit.log_llm_call(
-            job_slug="co", step="grade_resume", model="grader-model",
+            job_slug="co", step="grade_resume", model=DEFAULT_LLM_MODEL,
             prompt="Grade this", response=None, duration_ms=100,
         )
         call = audit.query_llm_calls("co")[0]
@@ -94,7 +144,7 @@ class TestLogLlmCall:
     def test_insert_with_none_job_slug(self, audit):
         """Calls before a slug is assigned (e.g. feasibility) log job_slug=None."""
         audit.log_llm_call(
-            job_slug=None, step="feasibility", model="customizer-model",
+            job_slug=None, step="feasibility", model=DEFAULT_LLM_MODEL,
             prompt="Check feasibility", response="YES", duration_ms=200,
         )
         # query by slug won't find it (slug is None), but the row exists

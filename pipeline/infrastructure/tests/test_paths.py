@@ -20,6 +20,7 @@ def test_from_hunter_dir(tmp_paths):
     assert tmp_paths.drafts == tmp_paths.hunter_dir / "stages" / "2_drafts"
     assert tmp_paths.ready == tmp_paths.hunter_dir / "stages" / "4_ready"
     assert tmp_paths.jobs_db == tmp_paths.data_dir / "jobs.db"
+    assert tmp_paths.exports == tmp_paths.logs / "exports"
 
 
 def test_paths_is_frozen(tmp_paths):

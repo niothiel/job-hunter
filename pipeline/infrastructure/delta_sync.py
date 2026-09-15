@@ -34,7 +34,7 @@ Transport:
 from __future__ import annotations
 
 import json
-import logging
+import structlog
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -111,7 +111,7 @@ def sync_deltas(
     paths: Paths,
     config: PipelineConfig,
     store: "EnrichmentStore",
-    logger: logging.Logger,
+    logger: structlog.stdlib.BoundLogger,
 ) -> dict:
     """Discover and consume unprocessed delta files.
 

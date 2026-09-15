@@ -3,7 +3,7 @@
 
 Creates a temp workspace, sets up a fake job, and runs the entire LangGraph
 pipeline (ingest -> grade JD -> triage -> customize -> grade resume ->
-optimize -> truthfulness -> ready) with canned LLM responses. Real file I/O
+veracity -> should_continue -> finalize -> ready) with canned LLM responses. Real file I/O
 (not dry_run) so you can watch folders move through the pipeline.
 
 Usage:
@@ -25,6 +25,7 @@ from pipeline.infrastructure.graph import build_job_graph
 from pipeline.infrastructure.llm_interface import FakeLLM
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.state import JobState, TriageDestination
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
 
 def main():
@@ -50,14 +51,35 @@ def main():
     (config_dir / "grading-protocol.md").write_text("# Grading Protocol\n")
     (config_dir / "veracity-protocol.md").write_text("# Veracity Protocol\n")
 
-    # ── FakeLLM with canned responses for all 5 LLM calls ──
+    # ── FakeLLM with canned responses for all LLM calls ──
     # The FakeLLM matches by substring (first match wins).
     # We need responses for:
-    # 1. JD grading prompt ("grading a job") -> grade 8.5
-    # 2. Customize prompt ("customizing") -> "Done" (we pre-create the resume file)
-    # 3. Resume grading prompt ("Be realistically harsh") -> grade 9.5 JSON
-    # 4. Optimize "can improve?" prompt ("YES or NO") -> NO (exit loop)
-    # 5. Truthfulness prompt ("truthfulness") -> verified=True JSON
+    # 1. JD grading two-call (reasoning + scoring) -> grade 8.5
+    # 2. Customize prompt ("customizing") -> edits + NO (exit loop)
+    # 3. Resume grading two-call ("Be realistically harsh" + "grading resume") -> 9.5
+    # 4. Truthfulness two-call ("truthfulness" + "verifying resume") -> verified
+
+    jd_reasoning_json = json.dumps({
+        "per_criterion": [
+            {"requirement": "Python", "tier": "core", "assessment": "ADDRESSED", "comment": "Strong"},
+        ],
+    })
+    jd_scoring_json = json.dumps({
+        "grade": 8.5, "ceiling": 10.0, "core_score": 10.0, "preferred_bonus": 0,
+        "quantitative_base": 10.0, "subjective_adjustment": 0.5,
+        "per_criterion": [
+            {"requirement": "Python", "tier": "core", "assessment": "ADDRESSED", "comment": "Strong"},
+        ],
+        "subjective_justification": "Strong fit.",
+        "justification": "Strong fit — senior engineering leader with Python.",
+    })
+
+    reasoning_json = json.dumps({
+        "per_criterion": [
+            {"requirement": "Python", "tier": "core", "assessment": "DIRECT_HIT", "comment": "Strong"},
+            {"requirement": "Leadership", "tier": "core", "assessment": "DIRECT_HIT", "comment": "Led 50+ engineers"},
+        ],
+    })
 
     grade_json = json.dumps({
         "grade": 9.5,
@@ -65,7 +87,7 @@ def main():
             {"requirement": "Python", "tier": "core", "assessment": "DIRECT_HIT", "comment": "Strong"},
             {"requirement": "Leadership", "tier": "core", "assessment": "DIRECT_HIT", "comment": "Led 50+ engineers"},
         ],
-        "model": "grader-model",
+        "model": DEFAULT_LLM_MODEL,
     })
 
     verification_json = json.dumps({
@@ -73,12 +95,16 @@ def main():
         "unverifiable_claims": [],
     })
 
+    classification_json = json.dumps({"per_claim": []})
+
     llm = FakeLLM(responses={
-        "grading a job": "GRADE: 8.5\nJUSTIFICATION: Strong fit — senior engineering leader with Python.",
-        "customizing": "Done. Resume customized.",
-        "Be realistically harsh": grade_json,
-        "YES or NO": "NO",
-        "truthfulness": verification_json,
+        "JD Grading Reasoning": jd_reasoning_json,
+        "JD Grading Scoring": jd_scoring_json,
+        "customizing": "Done. Resume customized.\n\nNO",
+        "Be realistically harsh": reasoning_json,
+        "You are grading resume v": grade_json,
+        "You are a truthfulness": classification_json,
+        "You are verifying resume": verification_json,
     })
 
     # ── Config (not dry_run — we want real file moves) ──
@@ -86,11 +112,12 @@ def main():
 
     # ── Logger that prints to stdout ──
     import logging
-    logger = logging.getLogger("smoke")
-    logger.setLevel(logging.INFO)
+    import structlog
+    logging.getLogger("smoke").setLevel(logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("  %(message)s"))
-    logger.addHandler(handler)
+    logging.getLogger("smoke").addHandler(handler)
+    logger = structlog.get_logger("smoke")
 
     # ── Build the graph ──
     graph = build_job_graph(checkpointer=None)
@@ -133,7 +160,7 @@ def main():
             self.slug = slug
             self.calls = []
 
-        def __call__(self, prompt, *, model, timeout, workspace):
+        def __call__(self, prompt, *, model, timeout, workspace, **kwargs):
             self.calls.append(prompt)
             resp, err = self.base(prompt, model=model, timeout=timeout, workspace=workspace)
 
@@ -200,8 +227,13 @@ def main():
     for rv in final.resume_versions:
         print(f"    v{rv.version}: {rv.path.name}")
     print(f"  latest_grade:       {final.latest_grade.grade if final.latest_grade else 'None'}")
-    print(f"  optimize_can_improve: {final.optimize_can_improve}")
+    print(f"  customizer_can_improve: {final.customizer_can_improve}")
     print(f"  verification:       {final.verification.verified if final.verification else 'None'}")
+    print(f"  version_history:    {len(final.version_history)}")
+    for v in final.version_history:
+        print(f"    v{v.version}: grade={v.grade} verified={v.verified}")
+    print(f"  selected_version:   {final.selected_version}")
+    print(f"  final_verification: {final.final_verification.verified if final.final_verification else 'None'}")
     print(f"  final_destination:  {final.final_destination}")
     print(f"  is_passing:         {final.is_passing}")
     print()
@@ -231,8 +263,10 @@ def main():
         ("Moved to drafts", final.triage == TriageDestination.DRAFTS),
         ("Resume v1 created", len(final.resume_versions) == 1),
         ("Resume graded 9.5", final.latest_grade and final.latest_grade.grade == 9.5),
-        ("Optimize exited (NO)", final.optimize_can_improve is False),
+        ("Customizer signaled done (NO)", final.customizer_can_improve is False),
         ("Truthfulness verified", final.verification and final.verification.verified),
+        ("Final gate verified", final.final_verification and final.final_verification.verified),
+        ("Version selected", final.selected_version == 1),
         ("Final destination: ready", final.final_destination == TriageDestination.READY),
         ("Folder in ready/", (paths.ready / slug).exists()),
     ]

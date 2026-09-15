@@ -41,8 +41,8 @@
 
 Two reference docs under `profile/` define the candidate's background. They have distinct roles:
 
-- **`_config/profile/base-resume/base-resume.md`** — the **base resume**. The only customization base: every tailored resume starts from this template (structure, formatting, existing bullets preserved). Also the primary reference when grading a JD.
-- **`_config/profile/full-experience/full-experience.md`** — the **full experience** (LinkedIn). Reference pool material for optimal JD match:
+- **`_config/profile/base-resume/`** — the **base resume**. The only customization base: every tailored resume starts from this template (structure, formatting, existing bullets preserved). Also the primary reference when grading a JD.
+- **`_config/profile/full-experience/`** — the **full experience** (LinkedIn). Reference pool material for optimal JD match:
   - **JD grading:** consulted to catch relevant experience not surfaced on the generic resume, so the grade reflects what's available to bring to the role.
   - **Customization:** supplies experience that can be pulled onto the base resume (new bullets, skills, technologies) — but only material that appears in LinkedIn.
   - **Never a customization base.** A customized resume is never built directly from the LinkedIn experience. It is always the generic resume + pulled-in LinkedIn material.

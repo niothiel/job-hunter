@@ -8,6 +8,7 @@ from unittest.mock import patch, MagicMock
 
 from pipeline.infrastructure import devin_cli as llm
 from pipeline.infrastructure.devin_cli import call_llm, call_llm_safe, LLMError
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
 
 def test_call_llm_success():
@@ -28,7 +29,7 @@ def test_call_llm_success():
     assert cmd[0] == "/usr/local/bin/devin"
     assert "-p" in cmd
     assert "--model" in cmd
-    assert "customizer-model" in cmd
+    assert DEFAULT_LLM_MODEL in cmd
     assert "--permission-mode" in cmd
     assert "dangerous" in cmd
     assert "--respect-workspace-trust" in cmd
@@ -46,10 +47,10 @@ def test_call_llm_custom_model():
     with patch("pipeline.infrastructure.devin_cli.subprocess.run", return_value=mock_result) as mock_run, \
          patch("pipeline.infrastructure.devin_cli.shutil.which", return_value="/usr/local/bin/devin"), \
          patch("pipeline.infrastructure.devin_cli.os.environ", {"PATH": "/usr/bin"}):
-        call_llm("Grade this", model="grader-model")
+        call_llm("Grade this", model=DEFAULT_LLM_MODEL)
 
     cmd = mock_run.call_args[0][0]
-    assert "grader-model" in cmd
+    assert DEFAULT_LLM_MODEL in cmd
 
 
 def test_call_llm_strips_acp_backend():

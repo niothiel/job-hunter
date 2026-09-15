@@ -13,6 +13,7 @@ Tests cover:
 import json
 import logging
 import os
+import structlog
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -72,6 +73,7 @@ def paths(scraper_dir, tmp_path):
         in_progress=p.in_progress,
         submitted=p.submitted,
         logs=p.logs,
+        exports=p.exports,
         grading=p.grading,
         veracity=p.veracity,
         grades_log=p.grades_log,
@@ -100,11 +102,9 @@ def config():
 
 @pytest.fixture
 def logger():
-    """Quiet logger for tests."""
-    log = logging.getLogger("test_delta_sync")
-    log.handlers.clear()
-    log.setLevel(logging.DEBUG)
-    return log
+    """Quiet structlog logger for tests."""
+    logging.getLogger("test_delta_sync").setLevel(logging.DEBUG)
+    return structlog.get_logger("test_delta_sync")
 
 
 def _make_job(url, title="Engineer", company="Acme", ats="LinkedIn"):

@@ -14,10 +14,12 @@ from pipeline.infrastructure.state import (
     TriageDestination,
     Verification,
     build_job_state_from_filesystem,
+    passing_versions,
+    select_best_passing,
+    with_customizer_can_improve,
     with_final_destination,
     with_jd_grade,
     with_latest_grade,
-    with_optimize_can_improve,
     with_resume_version,
     with_triage,
     with_verification,
@@ -98,11 +100,11 @@ def test_final_destination_transform():
     assert state.final_destination is None
 
 
-def test_optimize_can_improve_transform():
+def test_customizer_can_improve_transform():
     state = JobState(slug="test")
-    state2 = with_optimize_can_improve(state, True)
-    assert state2.optimize_can_improve is True
-    assert state.optimize_can_improve is None
+    state2 = with_customizer_can_improve(state, True)
+    assert state2.customizer_can_improve is True
+    assert state.customizer_can_improve is None
 
 
 # ─── Pure queries ──────────────────────────────────────────────────────────
@@ -174,6 +176,94 @@ def test_has_core_gaps_ignores_non_core_tier():
     )
     state = with_latest_grade(state, grade)
     assert not state.has_core_gaps
+
+
+# ─── version_history / evaluated_versions / select_best_passing (ADR-0018) ──
+
+
+def test_evaluated_versions_empty_without_history_or_grade():
+    state = JobState(slug="test")
+    assert state.evaluated_versions == []
+
+
+def test_evaluated_versions_falls_back_to_current_state():
+    """Pre-ADR-0018 states have no version_history — treat latest as v1."""
+    state = JobState(slug="test")
+    state = with_resume_version(
+        state, ResumeVersion(version=1, path=Path("drafts/test/resume-v1.md"))
+    )
+    state = with_latest_grade(state, ResumeGrade(grade=9.5))
+    state = with_verification(state, Verification(verified=True))
+
+    versions = state.evaluated_versions
+    assert len(versions) == 1
+    assert versions[0].version == 1
+    assert versions[0].grade == 9.5
+    assert versions[0].verified is True
+
+
+def test_evaluated_versions_prefers_history():
+    state = JobState(
+        slug="test",
+        version_history=[
+            ResumeVersion(version=1, path=Path("a"), grade=8.0, verified=True),
+            ResumeVersion(version=2, path=Path("b"), grade=9.5, verified=True),
+        ],
+    )
+    assert [v.version for v in state.evaluated_versions] == [1, 2]
+
+
+def test_select_best_passing_picks_highest_grade():
+    versions = [
+        ResumeVersion(version=1, path=Path("a"), grade=9.2, verified=True),
+        ResumeVersion(version=2, path=Path("b"), grade=9.8, verified=True),
+        ResumeVersion(version=3, path=Path("c"), grade=10.0, verified=False),
+    ]
+    best = select_best_passing(versions, 9.0)
+    assert best is not None and best.version == 2
+
+
+def test_select_best_passing_tie_prefers_earlier():
+    versions = [
+        ResumeVersion(version=1, path=Path("a"), grade=9.5, verified=True),
+        ResumeVersion(version=2, path=Path("b"), grade=9.5, verified=True),
+    ]
+    best = select_best_passing(versions, 9.0)
+    assert best is not None and best.version == 1
+
+
+def test_select_best_passing_none_when_nothing_passes():
+    versions = [
+        ResumeVersion(version=1, path=Path("a"), grade=8.5, verified=True),
+        ResumeVersion(version=2, path=Path("b"), grade=9.5, verified=False),
+        ResumeVersion(version=3, path=Path("c"), grade=None, verified=None),
+    ]
+    assert select_best_passing(versions, 9.0) is None
+
+
+def test_select_best_passing_empty_history():
+    assert select_best_passing([], 9.0) is None
+
+
+def test_passing_versions_orders_best_first():
+    """The final-gate cascade walks candidates highest-grade-first."""
+    versions = [
+        ResumeVersion(version=1, path=Path("a"), grade=9.2, verified=True),
+        ResumeVersion(version=2, path=Path("b"), grade=9.8, verified=True),
+        ResumeVersion(version=3, path=Path("c"), grade=10.0, verified=False),
+        ResumeVersion(version=4, path=Path("d"), grade=9.8, verified=True),
+    ]
+    ordered = passing_versions(versions, 9.0)
+    assert [v.version for v in ordered] == [2, 4, 1]
+
+
+def test_passing_versions_excludes_non_passing():
+    versions = [
+        ResumeVersion(version=1, path=Path("a"), grade=8.5, verified=True),
+        ResumeVersion(version=2, path=Path("b"), grade=9.5, verified=False),
+        ResumeVersion(version=3, path=Path("c"), grade=9.5, verified=None),
+    ]
+    assert passing_versions(versions, 9.0) == []
 
 
 # ─── Validation ────────────────────────────────────────────────────────────

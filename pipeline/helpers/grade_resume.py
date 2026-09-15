@@ -432,7 +432,9 @@ def main() -> None:
         sys.exit(1)
 
     # Grade
-    llm = RealLLM()
+    from pipeline.infrastructure.paths import Paths
+    paths = Paths.from_hunter_dir(hunter_dir)
+    llm = RealLLM(db_path=str(paths.jobs_db), export_dir=str(paths.exports))
     try:
         grade_data = grade_resume(resume_content, jd_text, llm, config)
     except RuntimeError as e:

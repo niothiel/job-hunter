@@ -1,7 +1,8 @@
-"""Step 9 (per-job): Truthfulness review — verify resume claims against LinkedIn.
+"""Step 8 (per-job): Truthfulness review — verify resume claims against sources.
 
-This is a LangGraph node. It uses a two-call truthfulness decomposition
-(ADR-0011):
+This is a LangGraph node, now inside the customize loop (ADR-0018): it runs
+after step7_grade_resume on EVERY version, not just the final one. It uses
+the two-call truthfulness decomposition (ADR-0011):
   - Call 1 (classification): loads sources + classifies each claim
   - Call 2 (synthesis): takes Call 1's verdicts as fixed input, produces
     the final verification JSON
@@ -13,30 +14,33 @@ cleans up the veracity workspace.
 Both calls use `normal` permission mode (ADR-0010) — the truthfulness reviewer
 cannot write files or exec commands; it returns JSON via stdout only.
 
-Only runs if grade >= threshold (resume_grade_threshold, default 9). If
-grade < threshold, the routing function (route_after_truthfulness in
-graph.py) sends to rejected_resume regardless — but this node still sets
-verification.verified = False as a safety net.
+Every run appends a fully-populated ResumeVersion record to
+state.version_history (grade, verified, draft hash, truthfulness issues) —
+step10_final_veracity selects the best passing version from that history
+and re-verifies it as the final gate before step11_finalize ships it.
 
-The verification is stored in state.verification. The routing function
-reads it: verified -> step10_ready, unverified -> rejected_resume.
+Only reviews the latest version if grade >= threshold (resume_grade_threshold,
+default 9). Below threshold the LLM calls are skipped and the history record
+gets verified=None (review not run — distinct from a failed review). The
+routing node (step9_should_continue) reads state.verification: a False or
+skipped review combined with a NO signal forces a repair revision.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
 
-from pipeline.infrastructure.file_ops import parse_grade_from_filename
 from pipeline.infrastructure.llm_interface import get_deps, parse_llm_json
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.protocol_constants import (
     VERACITY_CLASSIFICATION_PROTOCOL,
     VERACITY_SYNTHESIS_PROTOCOL,
 )
-from pipeline.infrastructure.state import JobState, Verification
+from pipeline.infrastructure.state import JobState, ResumeVersion, Verification
 
 
 # ─── Two-call prompt builders (ADR-0011) ─────────────────────────────────────
@@ -68,13 +72,13 @@ def build_classification_prompt(
 {resume_content}
 ```
 
-### Base resume (_config/profile/base-resume/base-resume.md)
+### Base resume (the customization base — every tailored resume starts here)
 
 ```markdown
 {base_resume_content}
 ```
 
-### Full LinkedIn experience (_config/profile/full-experience/full-experience.md)
+### Full LinkedIn experience (reference pool — the candidate's complete career history)
 
 ```markdown
 {linkedin_content}
@@ -122,53 +126,49 @@ def parse_verification_json(veracity_file: Path) -> dict | None:
         return None
 
 
-def _find_best_resume_in_drafts(slug: str, paths: Paths) -> Path | None:
-    """Find the resume with the highest grade in drafts/<slug>/."""
+def _draft_hash(resume_path: Path) -> str:
+    """sha256[:12] of the resume file's bytes ('' if missing)."""
+    try:
+        return hashlib.sha256(resume_path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return ""
+
+
+def find_resume_version_file(slug: str, version: int, paths: Paths) -> Path | None:
+    """Find the (possibly grade-renamed) file for a resume version."""
     job_dir = paths.drafts / slug
     if not job_dir.exists():
         return None
-    resume_files = list(job_dir.glob("*resume-v*.md"))
-    if not resume_files:
-        return None
-    # Pick the resume with the highest grade in the filename
-    return max(resume_files, key=lambda p: parse_grade_from_filename(p.name) or -1)
+    matches = sorted(job_dir.glob(f"*resume-v{version}.md"), key=lambda p: p.name)
+    return matches[0] if matches else None
 
 
-def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
-    """Run truthfulness review on the latest resume.
+def verify_resume_file(
+    deps,
+    slug: str,
+    resume_path: Path,
+    *,
+    step_label: str = "truthfulness",
+    file_prefix: str = "",
+) -> Verification:
+    """Run the two-call truthfulness verification on a resume file (ADR-0011).
 
-    Returns partial state with verification set. If grade < threshold,
-    returns verification.verified = False without calling the LLM (the
-    routing function sends to rejected_resume anyway).
+    Shared by step8_veracity (in-loop) and step10_final_veracity (post-loop
+    gate) — identical verification, different call sites and output names.
+    Persists <file_prefix>classification.json / <file_prefix>verification.json
+    under .veracity/<slug>/ for auditability.
 
-    Raises on LLM failure or unparseable verification JSON (when grade
-    >= threshold). In dry_run, skips the LLM call.
+    Raises on LLM failure or unparseable verification JSON.
     """
-    deps = get_deps(config)
-    slug = state.slug
-
-    # If grade < threshold, skip truthfulness — route to rejected_resume
-    threshold = deps.config.resume_grade_threshold
-    if not state.latest_grade or state.latest_grade.grade < threshold:
-        deps.logger.info(
-            f"  {slug}: grade below {threshold}, skipping truthfulness"
-        )
-        return {"verification": Verification(verified=False)}
-
-    if deps.config.dry_run:
-        deps.logger.info(f"  {slug}: dry-run truthfulness (skipped)")
-        return {"verification": Verification(verified=False)}
-
-    # Find the best resume (highest grade in filename)
-    resume_path = _find_best_resume_in_drafts(slug, deps.paths)
-    if not resume_path:
-        raise RuntimeError(f"{slug}: no resume found for truthfulness review")
-
-    # Create veracity workspace
     veracity_dir = deps.paths.veracity / slug
     veracity_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build relative path for prompts
+    # Remove a stale fallback file from a prior run — the synthesis fallback
+    # reads plain "verification.json", and an old one would be misattributed
+    # to this call if the LLM's stdout isn't parseable (e.g. a previous
+    # cascade candidate left one behind).
+    (veracity_dir / "verification.json").unlink(missing_ok=True)
+
     resume_rel = str(resume_path.relative_to(deps.paths.hunter_dir))
 
     # Pre-read source files to inline into the classification prompt
@@ -177,18 +177,21 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
     linkedin_content = deps.paths.linkedin_experience.read_text(encoding="utf-8")
 
     # ─── Call 1: Classification (ADR-0011) ─────────────────────────────
+    # alive_check_seconds=<timeout> disables the 10s liveness probe (see step6).
+    truth_timeout = deps.config.timeout_for("truthfulness")
     classification_prompt = build_classification_prompt(
         slug, resume_rel, resume_content, base_resume_content, linkedin_content
     )
     classification_output, classification_error = deps.llm(
         classification_prompt,
         model=deps.config.models.truthfulness,
-        timeout=deps.config.timeout_for("truthfulness"),
+        timeout=truth_timeout,
+        alive_check_seconds=truth_timeout,
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         permission_mode="normal",
-        job_slug=slug, step="truthfulness",
+        job_slug=slug, step=step_label,
     )
 
     if classification_error:
@@ -204,8 +207,7 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
         )
 
     # Persist classification JSON for auditability (ADR-0011)
-    classification_file = deps.paths.veracity / slug / "classification.json"
-    classification_file.parent.mkdir(parents=True, exist_ok=True)
+    classification_file = veracity_dir / f"{file_prefix}classification.json"
     with open(classification_file, "w") as f:
         json.dump(classification_data, f, indent=2)
 
@@ -215,12 +217,13 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
     synthesis_output, synthesis_error = deps.llm(
         synthesis_prompt,
         model=deps.config.models.truthfulness,
-        timeout=deps.config.timeout_for("truthfulness"),
+        timeout=truth_timeout,
+        alive_check_seconds=truth_timeout,
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
         permission_mode="normal",
-        job_slug=slug, step="truthfulness",
+        job_slug=slug, step=step_label,
     )
 
     if synthesis_error:
@@ -231,28 +234,92 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
     # Parse verification JSON from stdout (primary path — ADR-0010)
     verification_data = parse_llm_json(synthesis_output)
 
-    # Fallback: read from file (transitional compat)
+    # Fallback: read from file (transitional compat). The name is always
+    # plain "verification.json" — an LLM that wrote a file would not know
+    # the orchestrator's file_prefix convention.
     if verification_data is None:
-        veracity_file = deps.paths.veracity / slug / "verification.json"
-        verification_data = parse_verification_json(veracity_file)
+        verification_data = parse_verification_json(
+            veracity_dir / "verification.json"
+        )
 
     if verification_data is None:
         raise RuntimeError(
             f"{slug}: could not parse verification JSON from synthesis call stdout"
-            f" or read from .veracity/{slug}/verification.json"
+            f" or read from {veracity_dir / 'verification.json'}"
         )
 
     # Orchestrator writes the verification JSON file (ADR-0010)
-    veracity_file = deps.paths.veracity / slug / "verification.json"
-    veracity_file.parent.mkdir(parents=True, exist_ok=True)
+    veracity_file = veracity_dir / f"{file_prefix}verification.json"
     with open(veracity_file, "w") as f:
         json.dump(verification_data, f, indent=2)
 
     # Parse into Verification model (validates fields)
     try:
-        verification = Verification.model_validate(verification_data)
+        return Verification.model_validate(verification_data)
     except Exception as e:
         raise RuntimeError(f"{slug}: could not parse verification JSON: {e}") from e
+
+
+def step8_veracity_node(state: JobState, config: RunnableConfig) -> dict:
+    """Run truthfulness review on the latest resume version.
+
+    Returns partial state with verification set and a ResumeVersion record
+    appended to version_history. If the grade is below threshold (or absent),
+    the LLM calls are skipped and the record gets verified=None (not run).
+
+    Raises on LLM failure or unparseable verification JSON (when grade
+    >= threshold). In dry_run, skips the LLM calls.
+    """
+    deps = get_deps(config)
+    slug = state.slug
+    latest = state.latest_resume
+
+    if not latest:
+        raise RuntimeError(f"{slug}: no resume to verify")
+    version = latest.version
+
+    # Find the actual file — step7 renamed it with a [grade] prefix.
+    resume_path = find_resume_version_file(slug, version, deps.paths)
+    if resume_path is None:
+        resume_path = latest.path
+
+    grade = state.latest_grade.grade if state.latest_grade else None
+
+    def _record(verified: bool | None, issues: list[str] | None = None) -> ResumeVersion:
+        lg = state.latest_grade
+        return ResumeVersion(
+            version=version,
+            path=resume_path,
+            grade=grade,
+            verified=verified,
+            draft_hash=_draft_hash(resume_path),
+            truthfulness_issues=issues or [],
+            per_criterion=lg.per_criterion if lg else [],
+            justification=lg.justification if lg else "",
+        )
+
+    # If grade < threshold, skip truthfulness — the version can't pass anyway.
+    threshold = deps.config.resume_grade_threshold
+    if grade is None or grade < threshold:
+        deps.logger.info(
+            f"  {slug}: grade below {threshold}, skipping truthfulness"
+        )
+        return {
+            "verification": Verification(verified=False),
+            "version_history": [_record(None)],
+        }
+
+    if deps.config.dry_run:
+        deps.logger.info(f"  {slug}: dry-run truthfulness (skipped)")
+        return {
+            "verification": Verification(verified=False),
+            "version_history": [_record(None)],
+        }
+
+    if not resume_path.exists():
+        raise RuntimeError(f"{slug}: no resume found for truthfulness review")
+
+    verification = verify_resume_file(deps, slug, resume_path)
 
     verified = verification.verified
     deps.logger.info(
@@ -261,6 +328,14 @@ def step9_veracity_node(state: JobState, config: RunnableConfig) -> dict:
     )
 
     # Clean up veracity workspace
-    shutil.rmtree(veracity_dir, ignore_errors=True)
+    shutil.rmtree(deps.paths.veracity / slug, ignore_errors=True)
 
-    return {"verification": verification}
+    return {
+        "verification": verification,
+        "version_history": [
+            _record(
+                verified,
+                [c.claim for c in verification.unverifiable_claims],
+            )
+        ],
+    }

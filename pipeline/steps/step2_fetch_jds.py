@@ -6,13 +6,13 @@ in all_jobs.json. Built-in exponential backoff for LinkedIn rate-limiting.
 """
 from __future__ import annotations
 
-import logging
+import structlog
 
 from pipeline.infrastructure.paths import Paths
 
 
 def step2_fetch_jds(
-    logger: logging.Logger,
+    logger: structlog.stdlib.BoundLogger,
     store,
     paths: Paths,
 ) -> tuple[int, int]:

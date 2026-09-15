@@ -1,29 +1,44 @@
-"""Step 6 (per-job): Customize resume — first customization or optimize iteration.
+"""Step 6 (per-job): Customize resume — shared first-draft + revision loop node.
 
-This is a LangGraph node. It handles both the first customization (version 1)
-and re-entry from the optimize cycle (version 2+).
+This is a LangGraph node. One implementation handles every version
+(ADR-0018 — the old separate optimize prompt/node is gone):
 
-- First iteration (version 1): pre-copy base resume to
-  drafts/<slug>/[TBD] resume-v1.md, build customize prompt, call LLM.
-- Re-entry (version > 1): build optimize prompt with grader feedback,
-  call LLM to write drafts/<slug>/[TBD] resume-v{N}.md.
+- Version 1: the base resume is pre-copied as the starting draft.
+- Version 2+: the previous version's output is pre-copied as the starting
+  draft, and the prompt carries the grader + veracity feedback on it.
 
-The LLM (customizer model) edits/writes the file in place. The node appends
-a ResumeVersion to state (LangGraph concatenates via Annotated[list, add]).
+Both get the same prompt — same source documents, same few-shot examples,
+same protocol. After editing, the customizer answers "Could this be
+truthfully improved further? YES or NO" on stdout. That answer is the
+loop's stopping signal (replacing the old step8 "can you improve?" call).
+
+The orchestrator validates the signal against the actual file diff:
+
+- changed + YES     → normal; the loop may continue
+- changed + NO      → valid stop (pending the veracity gate downstream)
+- identical + NO    → valid stop; the duplicate copy is removed and
+                      grading/veracity are skipped for it
+- identical + YES   → contract violation (claimed improvements exist but
+                      made none) → error
+- no YES/NO answer  → contract violation → error
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
 
-from pipeline.infrastructure.file_ops import strip_url_metadata
+from pipeline.infrastructure.file_ops import (
+    parse_version_from_filename,
+    strip_url_metadata,
+)
 from pipeline.infrastructure.injection_filter import scrub_jd_text, wrap_jd_content
 from pipeline.infrastructure.llm_interface import get_deps
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.protocol_constants import RESUME_CUSTOMIZATION_PROTOCOL
-from pipeline.infrastructure.state import Assessment, JobState, ResumeVersion
+from pipeline.infrastructure.state import JobState, ResumeVersion
 
 
 def build_customize_prompt(
@@ -35,16 +50,24 @@ def build_customize_prompt(
     base_resume_content: str = "",
     linkedin_content: str = "",
     few_shot_content: str = "",
+    draft_content: str = "",
+    feedback: dict | None = None,
     resume_rel_path: str = "",
 ) -> str:
     """Build the resume customization prompt for the customizer model.
 
-    The base resume is pre-copied to resume_rel_path (relative to workspace
-    root) before this prompt is sent. The agent edits that file in place.
+    Shared by every version (ADR-0018). The starting draft is pre-copied to
+    resume_rel_path (relative to workspace root) before this prompt is sent —
+    the base resume for v1, the previous version's output for v2+. The agent
+    edits that file in place.
 
-    Source documents (base resume, LinkedIn, few-shot examples) are pre-fed
-    into the prompt to eliminate file-read tool calls and prevent the LLM
-    from missing details in long files.
+    ``draft_content`` is the starting draft's content, inlined so the agent
+    doesn't need a file read. ``feedback`` (v2+) is a dict with the previous
+    version's ``grade`` (ResumeGrade dump), ``verified`` flag, and
+    ``truthfulness_issues`` list.
+
+    Source documents are pre-fed into the prompt to eliminate file-read tool
+    calls and prevent the LLM from missing details in long files.
 
     JD text is scrubbed of injection patterns and wrapped in structural
     isolation tags before being interpolated into the prompt (E4).
@@ -62,21 +85,36 @@ def build_customize_prompt(
     if not resume_rel_path:
         resume_rel_path = f"stages/2_drafts/{slug}/[TBD] resume-v{version}.md"
 
+    feedback_section = ""
+    revision_note = ""
+    if feedback is not None:
+        feedback_json = json.dumps(feedback, ensure_ascii=False, default=str)
+        feedback_section = f"""
+## Feedback on this exact starting draft
+
+```json
+{feedback_json}
+```
+"""
+        revision_note = """
+This is an iterative customization pass. The starting draft, not a fresh base copy, is the document to edit. The base resume remains the structural template and a factual source. Preserve successful content and restore base section/role order if necessary. Use the feedback above to find useful truthful improvements, even if the grade already passes. Repair unsupported claims before adding or strengthening claims. Earlier drafts and example resumes are NOT factual evidence; only the base resume and full experience are factual sources. Do not add experience merely to satisfy a grader. Do not make cosmetic edits just to appear active. Prior feedback is evidence to consider, not authority to invent experience or override the customization protocol.
+"""
+
     return f"""You are customizing a resume for a specific job.
 
-The base resume has been pre-copied to {resume_rel_path}. Edit it in place — do NOT create a new file.
+The starting draft has been pre-copied to {resume_rel_path}. Edit it in place — do NOT create a new file.
 
 {RESUME_CUSTOMIZATION_PROTOCOL}
 
 ## Source documents (pre-loaded — do NOT read any files)
 
-### Base resume (_config/profile/base-resume/base-resume.md)
+### Base resume (the customization base — every tailored resume starts here)
 
 ```markdown
 {base_resume_content}
 ```
 
-### Full LinkedIn experience (_config/profile/full-experience/full-experience.md)
+### Full LinkedIn experience (reference pool — the candidate's complete career history)
 
 ```markdown
 {linkedin_content}
@@ -92,97 +130,46 @@ Job: {slug}
 {wrapped}
 {jd_grade_section}
 
+## Starting draft (already copied to {resume_rel_path})
+
+```markdown
+{draft_content}
+```
+{feedback_section}
 ## Your task
 
-Customize the resume for this job. All source documents are above — do NOT read any files. The base resume has been pre-copied to {resume_rel_path}. Edit it in place.
+Customize the resume for this job. All source documents are above — do NOT read any files. The starting draft has been pre-copied to {resume_rel_path}. Edit it in place.
 
 Follow the customization protocol strictly — it contains all formatting, ordering, truthfulness, and strategy rules. Pull in experience from the LinkedIn (truthfully — never fabricate). Study the few-shot examples above to learn the desired transformation patterns.
-
+{revision_note}
 After writing the resume, verify it fits the line budget per the customization protocol (self-measure with `python3 -m pipeline.helpers.count_lines {resume_rel_path} --json`, self-trim if over 75).
 
-Edit the resume at {resume_rel_path} in place.
+Edit only {resume_rel_path}; do not change any other file.
 
-Do NOT output the resume to stdout. Write it to the file."""
+## Final step, after editing, self-measurement, and any trimming
+
+Could this be truthfully improved further? Just give a yes/no answer — if you take more than 5 seconds on this, you're overthinking it. Answer about the completed output draft, not the starting draft. Return exactly YES or NO as your final stdout response. Do not explain your answer or perform further edits after answering. Do NOT output the resume content to stdout."""
 
 
-def build_optimize_prompt(
-    slug: str,
-    jd_text: str,
-    current_resume_path: str,
-    next_version: int,
-    per_criterion: list,
-    base_resume_content: str = "",
-    linkedin_content: str = "",
-    current_resume_content: str = "",
-    resume_rel_path: str = "",
-) -> str:
-    """Build the optimization prompt for the customizer model.
+def parse_customize_outcome(output: str | None) -> bool:
+    """Extract the customizer's YES/NO stopping signal from stdout.
 
-    per_criterion is a list of Criterion Pydantic models from the latest grade.
+    The prompt requires the final stdout response to be exactly YES or NO.
+    Scans lines from the end so the last exact-match line wins over any
+    earlier reasoning text. Returns True for YES, False for NO.
 
-    Source documents (base resume, LinkedIn, current resume) are pre-fed
-    into the prompt to eliminate file-read tool calls.
-
-    JD text is scrubbed of injection patterns and wrapped in structural
-    isolation tags before being interpolated into the prompt (E4).
+    Raises RuntimeError when no exact YES/NO line is found — the outcome
+    contract requires an explicit answer.
     """
-    scrubbed = scrub_jd_text(jd_text)
-    wrapped = wrap_jd_content(scrubbed)
-    feedback_lines = []
-    for c in per_criterion:
-        if c.assessment in (Assessment.GAP, Assessment.PARTIAL):
-            feedback_lines.append(
-                f"- [{c.tier}] {c.assessment.value}: {c.requirement} — {c.comment}"
-            )
-
-    feedback = (
-        "\n".join(feedback_lines) if feedback_lines else "No specific gaps identified."
+    for line in reversed((output or "").strip().split("\n")):
+        word = line.strip().upper()
+        if word == "YES":
+            return True
+        if word == "NO":
+            return False
+    raise RuntimeError(
+        "customizer did not return a YES/NO outcome as its final response"
     )
-
-    if not resume_rel_path:
-        resume_rel_path = f"stages/2_drafts/{slug}/[TBD] resume-v{next_version}.md"
-
-    return f"""You are improving a customized resume for a specific job.
-
-{RESUME_CUSTOMIZATION_PROTOCOL}
-
-## Source documents (pre-loaded — do NOT read any files)
-
-### Base resume (_config/profile/base-resume/base-resume.md)
-
-```markdown
-{base_resume_content}
-```
-
-### Full LinkedIn experience (_config/profile/full-experience/full-experience.md)
-
-```markdown
-{linkedin_content}
-```
-
-### Current customized resume ({current_resume_path})
-
-```markdown
-{current_resume_content}
-```
-
-## Job
-
-Job: {slug}
-{wrapped}
-
-The grader found these areas to improve:
-{feedback}
-
-## Your task
-
-Improve the resume to address these gaps while staying truthful. All source documents are above — do NOT read any files. Follow the customization protocol strictly — it contains all formatting, ordering, truthfulness, and strategy rules.
-
-After writing the resume, verify it fits the line budget per the customization protocol (self-measure with `python3 -m pipeline.helpers.count_lines {resume_rel_path} --json`, self-trim if over 75).
-
-Write the improved resume to {resume_rel_path}
-
-Do NOT output the resume to stdout. Write it to the file."""
 
 
 def _find_jd_in_drafts(slug: str, paths: Paths) -> tuple[str, Path | None]:
@@ -226,20 +213,20 @@ def _load_few_shot_examples(paths: Paths, config) -> str:
 
 
 def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
-    """Customize the resume (first iteration) or optimize it (re-entry).
+    """Customize the resume — first draft (v1) or revision (v2+).
 
-    First iteration (no resume versions yet):
-        - Pre-copy base resume to drafts/<slug>/[TBD] resume-v1.md
-        - Build customize prompt, call LLM (customizer model)
-
-    Re-entry (optimize cycle, version > 1):
-        - Build optimize prompt with grader feedback
-        - Call LLM to write drafts/<slug>/[TBD] resume-v{N}.md
+    Both cases pre-copy a starting draft (base resume for v1, the previous
+    version for v2+), build the shared customize prompt, call the customizer
+    with scoped permissions, then parse + validate the YES/NO outcome.
 
     Returns partial state with a new ResumeVersion appended (LangGraph
-    concatenates via the Annotated[list, add] reducer).
+    concatenates via the Annotated[list, add] reducer), the
+    customizer_can_improve signal, and the customizer_draft_unchanged flag
+    (True when a v2+ draft came back byte-identical — the duplicate is
+    removed and evaluation is skipped downstream).
 
-    Raises on missing base resume, missing JD text, or LLM failure.
+    Raises on missing base resume, missing JD text, LLM failure, a missing
+    output file, or a YES/NO outcome contract violation.
     """
     deps = get_deps(config)
     slug = state.slug
@@ -264,71 +251,83 @@ def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
         deps.logger.info(f"  {slug}: dry-run customize v{version} -> {resume_path.name}")
         return {"resume_versions": [ResumeVersion(version=version, path=resume_path)]}
 
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pre-copy the starting draft: base resume for v1, previous version for v2+.
+    feedback = None
     if version == 1:
-        # First iteration: pre-copy base resume
         if not deps.paths.base_resume.exists():
             raise RuntimeError(
                 f"{slug}: base resume not found at {deps.paths.base_resume}"
             )
-        job_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(deps.paths.base_resume, resume_path)
-        deps.logger.debug(f"  {slug}: pre-copied base resume -> {resume_path.name}")
-
-        # Pre-read source files for prompt inlining
-        base_resume_content = deps.paths.base_resume.read_text(encoding="utf-8")
-        linkedin_content = deps.paths.linkedin_experience.read_text(encoding="utf-8")
-        few_shot_content = _load_few_shot_examples(deps.paths, deps.config)
-
-        # Build customize prompt
-        jd_grade = state.jd_grade.grade if state.jd_grade else 0
-        jd_justification = state.jd_grade.justification if state.jd_grade else ""
-        prompt = build_customize_prompt(
-            slug, jd_text, version, jd_grade, jd_justification,
-            base_resume_content, linkedin_content, few_shot_content,
-            resume_rel_path=resume_rel_path,
-        )
     else:
-        # Re-entry: optimize with grader feedback
-        latest = state.latest_resume
-        if not latest:
-            raise RuntimeError(f"{slug}: no latest resume to optimize from")
-
-        # Find the actual current resume file (might be graded with [score] prefix)
-        current_resumes = sorted(
+        previous = sorted(
             job_dir.glob(f"*resume-v{version - 1}.md"),
             key=lambda p: p.name,
         )
-        if not current_resumes:
+        if not previous:
+            # The immediate prior version may have been removed as a
+            # byte-identical duplicate — fall back to the highest-versioned
+            # resume file still on disk.
+            existing = [
+                p
+                for p in job_dir.glob("*resume-v*.md")
+                if parse_version_from_filename(p.name) is not None
+            ]
+            previous = sorted(
+                existing,
+                key=lambda p: parse_version_from_filename(p.name) or 0,
+            )[-1:]
+        if not previous:
             raise RuntimeError(
-                f"{slug}: could not find resume-v{version - 1} to optimize from"
+                f"{slug}: could not find resume-v{version - 1} to revise from"
             )
-        current_resume = current_resumes[0]
-        current_resume_rel = str(current_resume.relative_to(deps.paths.hunter_dir))
+        shutil.copy2(previous[0], resume_path)
+        feedback = {
+            "grade": state.latest_grade.model_dump() if state.latest_grade else None,
+            "verified": state.verification.verified if state.verification else None,
+            "truthfulness_issues": (
+                [c.claim for c in state.verification.unverifiable_claims]
+                if state.verification
+                else []
+            ),
+        }
 
-        # Pre-read source files for prompt inlining
-        base_resume_content = deps.paths.base_resume.read_text(encoding="utf-8")
-        linkedin_content = deps.paths.linkedin_experience.read_text(encoding="utf-8")
-        current_resume_content = current_resume.read_text(encoding="utf-8")
+    draft_content = resume_path.read_text(encoding="utf-8")
+    before_bytes = resume_path.read_bytes()
+    deps.logger.debug(f"  {slug}: pre-copied starting draft -> {resume_path.name}")
 
-        # Build optimize prompt with grader feedback
-        per_criterion = state.latest_grade.per_criterion if state.latest_grade else []
-        prompt = build_optimize_prompt(
-            slug, jd_text, current_resume_rel, version, per_criterion,
-            base_resume_content, linkedin_content, current_resume_content,
-            resume_rel_path=resume_rel_path,
-        )
+    # Pre-read source files for prompt inlining
+    base_resume_content = deps.paths.base_resume.read_text(encoding="utf-8")
+    linkedin_content = deps.paths.linkedin_experience.read_text(encoding="utf-8")
+    few_shot_content = _load_few_shot_examples(deps.paths, deps.config)
 
-    # Call LLM (customizer model edits/writes the file in place)
+    jd_grade = state.jd_grade.grade if state.jd_grade else 0
+    jd_justification = state.jd_grade.justification if state.jd_grade else ""
+    prompt = build_customize_prompt(
+        slug, jd_text, version, jd_grade, jd_justification,
+        base_resume_content, linkedin_content, few_shot_content,
+        draft_content=draft_content, feedback=feedback,
+        resume_rel_path=resume_rel_path,
+    )
+
+    # Call LLM (customizer model edits the file in place)
     # The customizer uses scoped permissions (ADR-0010, E4) — a config file
     # restricts writes to drafts/** and exec to count_lines.py only.
     customizer_config = None
     if deps.paths.agent_permissions.exists():
         customizer_config = str(deps.paths.agent_permissions)
 
+    # alive_check_seconds=<timeout> disables the 10s liveness probe — a
+    # customize turn legitimately runs minutes without stdout, and the probe
+    # was killing attempt 0 and forcing a wasted retry.
+    customize_timeout = deps.config.timeout_for("customize")
     output, error = deps.llm(
         prompt,
         model=deps.config.models.customizer,
-        timeout=deps.config.timeout_for("customize"),
+        timeout=customize_timeout,
+        alive_check_seconds=customize_timeout,
         retries=deps.config.llm_retries,
         retry_delay=deps.config.llm_retry_delay,
         workspace=str(deps.paths.hunter_dir),
@@ -352,5 +351,33 @@ def step6_customize_node(state: JobState, config: RunnableConfig) -> dict:
                 f"{slug}: customization v{version} did not produce a resume file"
             )
 
-    deps.logger.info(f"  {slug}: resume v{version} customized -> {resume_path.name}")
-    return {"resume_versions": [ResumeVersion(version=version, path=resume_path)]}
+    # Parse the YES/NO outcome and validate it against the file diff.
+    can_improve = parse_customize_outcome(output)
+    changed = resume_path.read_bytes() != before_bytes
+
+    if not changed and can_improve:
+        raise RuntimeError(
+            f"{slug}: customizer answered YES (further improvement possible) "
+            f"but left resume-v{version} byte-identical — outcome contract violation"
+        )
+
+    if not changed and version > 1:
+        # Byte-identical + NO: valid early stop. The pre-copied file isn't a
+        # distinct version — remove it; grading/veracity are skipped via
+        # route_after_customize and should_continue sees the NO signal.
+        resume_path.unlink()
+        deps.logger.info(
+            f"  {slug}: v{version} byte-identical to v{version - 1} and "
+            f"customizer said NO -> valid stop (evaluation skipped)"
+        )
+        return {"customizer_can_improve": False, "customizer_draft_unchanged": True}
+
+    deps.logger.info(
+        f"  {slug}: resume v{version} customized -> {resume_path.name} "
+        f"(can_improve={'YES' if can_improve else 'NO'})"
+    )
+    return {
+        "resume_versions": [ResumeVersion(version=version, path=resume_path)],
+        "customizer_can_improve": can_improve,
+        "customizer_draft_unchanged": False,
+    }

@@ -15,7 +15,7 @@
 | Grade a resume | `stages/2_drafts/<company-role>/[TBD] resume-vN.md` → rename to `[score] resume-vN.md` | The JD from `stages/1_listings/<company-role>/` |
 | Optimization review (can we improve?) | Stay in `stages/2_drafts/<company-role>/` — loop back to customize if yes. Continue until no further truthful improvement is possible, regardless of grade. | Current resume + JD + `_config/profile/full-experience/` (for additional sourcing material) |
 | Truthfulness review | Check `stages/2_drafts/<company-role>/[score] resume-vN.md` against `_config/profile/full-experience/` (the superset) | Resume + full experience |
-| Abandon a listing (couldn't optimize) | Move to `stages/6_rejected/[RESUME] <company-role>/` | Resume grade < 9 after optimization loop |
+| Abandon a listing (couldn't optimize) | Move to `stages/6_rejected/[RESUME] <company-role>/` | No resume version passed grade ≥ 9 + veracity |
 | Move to ready | `stages/2_drafts/` → `stages/4_ready/<company-role>/` | Passing resume + JD |
 | Convert resume to PDF | `python3 -m pipeline.helpers.md_to_pdf` | Resume markdown file |
 | Measure resume rendered lines | `python3 -m pipeline.helpers.count_lines <path> [--json] [--wrap-chars N]` | Resume markdown file. Used by the customizer to self-measure against the line budget (target 70, ceiling 75). |
@@ -43,7 +43,7 @@ The pipeline is fully automated by `python3 -m pipeline` (`pipeline/__main__.py`
 
 - **Runs hourly** via systemd user timer (`job-hunter-pipeline.timer`).
 - **Prep phase** (plain functions): feasibility check, fetch JDs, discover new jobs.
-- **Per-job phase** (LangGraph `StateGraph`): ingest → grade JD → triage → customize → grade resume → optimize loop → truthfulness → ready/rejected. Each job runs as a separate graph invocation with `thread_id=slug` for per-job checkpointing.
+- **Per-job phase** (LangGraph `StateGraph`): ingest → grade JD → triage → [customize → grade resume → veracity → should_continue] loop → final veracity gate → finalize → ready/rejected. Each job runs as a separate graph invocation with `thread_id=slug` for per-job checkpointing.
 - **Checkpointer** (`SqliteSaver` at `data/jobs.db`) provides per-job resumability — an interrupted hourly run resumes from the last checkpoint.
 - **Clearance detection is LLM-only** (ADR-0007) — no regex filter. The JD grading prompt returns `CLEARANCE` instead of a grade if the job requires clearance.
 - **Optimize loop terminates** via grade + gaps + iteration count + LLM "can you improve?" check (ADR-0009).

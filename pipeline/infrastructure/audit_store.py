@@ -14,7 +14,7 @@ Usage:
     audit.log_llm_call(
         job_slug="google-engineer",
         step="grade_jd",
-        model="customizer-model",
+        model=DEFAULT_LLM_MODEL,
         prompt="Grade this JD...",
         response="GRADE: 8.5\n...",
         params={"timeout": 120, "retries": 2},
@@ -25,13 +25,15 @@ Usage:
 from __future__ import annotations
 
 import json
-import logging
 import os
 import sqlite3
+import structlog
 from datetime import datetime, timezone
 
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
-logger = logging.getLogger(__name__)
+
+logger = structlog.get_logger(__name__)
 
 
 _LLM_CALLS_SCHEMA = """
@@ -40,13 +42,24 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     timestamp TEXT NOT NULL,
     job_slug TEXT,
     step TEXT,
+    call_id TEXT,
     model TEXT,
     prompt TEXT,
     response TEXT,
+    error TEXT,
+    status TEXT,
     params TEXT,
     duration_ms INTEGER
 );
 """
+
+# Migration for DBs created before call_id/status/error columns existed.
+# SQLite's ALTER TABLE ADD COLUMN is safe to run on existing tables.
+_LLM_CALLS_MIGRATIONS = [
+    "ALTER TABLE llm_calls ADD COLUMN call_id TEXT",
+    "ALTER TABLE llm_calls ADD COLUMN error TEXT",
+    "ALTER TABLE llm_calls ADD COLUMN status TEXT",
+]
 
 
 class AuditStore:
@@ -65,6 +78,12 @@ class AuditStore:
             self._conn = sqlite3.connect(self.db_path)
             self._conn.row_factory = sqlite3.Row
             self._conn.executescript(_LLM_CALLS_SCHEMA)
+            # Migrate existing tables: add new columns if missing.
+            for migration in _LLM_CALLS_MIGRATIONS:
+                try:
+                    self._conn.execute(migration)
+                except sqlite3.OperationalError:
+                    pass  # Column already exists.
             self._conn.commit()
         except (sqlite3.Error, OSError) as e:
             logger.warning(
@@ -94,20 +113,27 @@ class AuditStore:
         response: str | None = None,
         params: dict | None = None,
         duration_ms: int | None = None,
+        call_id: str | None = None,
+        status: str | None = None,
+        error: str | None = None,
     ) -> None:
         """Append an LLM call record. Never raises on DB errors.
 
         Args:
             job_slug: The company-role slug (None if not yet known — e.g.
                       feasibility checking before a slug is assigned).
-            step: Pipeline step name (e.g. "grade_jd", "customize",
-                  "grade_resume", "truthfulness"). None until Stream 1a
-                  wires step identification through.
+            step: Pipeline step name (e.g. "grade-jd", "customize",
+                  "grade-resume", "truthfulness"). Passed by step nodes
+                  via deps.llm(..., step="<step-name>").
             model: Model identifier.
             prompt: Full prompt text sent to the LLM.
             response: Full response text (None on error).
             params: Dict of model parameters (timeout, retries, etc.).
             duration_ms: Call duration in milliseconds.
+            call_id: Per-step call identifier (e.g. "grade-jd#2") for
+                     correlating with the in-memory calls list.
+            status: "ok" or "error" — makes filtering failed calls trivial.
+            error: Error string when status is "error" (None on success).
         """
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         params_json = json.dumps(params) if params else None
@@ -119,11 +145,11 @@ class AuditStore:
         try:
             self._conn.execute(
                 """INSERT INTO llm_calls
-                   (timestamp, job_slug, step, model, prompt, response,
-                    params, duration_ms)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (now, job_slug, step, model, prompt, response,
-                 params_json, duration_ms),
+                   (timestamp, job_slug, step, call_id, model, prompt,
+                    response, error, status, params, duration_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (now, job_slug, step, call_id, model, prompt,
+                 response, error, status, params_json, duration_ms),
             )
             self._conn.commit()
         except sqlite3.Error as e:
@@ -143,8 +169,9 @@ class AuditStore:
             return []
         try:
             rows = self._conn.execute(
-                """SELECT id, timestamp, job_slug, step, model, prompt,
-                          response, params, duration_ms
+                """SELECT id, timestamp, job_slug, step, call_id, model,
+                          prompt, response, error, status, params,
+                          duration_ms
                    FROM llm_calls
                    WHERE job_slug = ?
                    ORDER BY id ASC""",
@@ -162,9 +189,12 @@ class AuditStore:
             "timestamp": row["timestamp"],
             "job_slug": row["job_slug"],
             "step": row["step"],
+            "call_id": row["call_id"],
             "model": row["model"],
             "prompt": row["prompt"],
             "response": row["response"],
+            "error": row["error"],
+            "status": row["status"],
             "params": row["params"],
             "duration_ms": row["duration_ms"],
         }

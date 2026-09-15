@@ -45,7 +45,7 @@ export const DECISIONS = [
   { axis: 'Agent separation', decision: 'Customizer, grader, and truthfulness verifier are distinct agents', adr: '—' },
   { axis: 'Pipeline engine', decision: 'LangGraph StateGraph with Pydantic state + SqliteSaver checkpointer', adr: '[0005](../adr/0005-langgraph-as-pipeline-engine.md)' },
   { axis: 'Clearance detection', decision: 'LLM-only (no regex) — JD grader returns CLEARANCE instead of a grade', adr: '[0007](../adr/0007-llm-only-clearance-check.md)' },
-  { axis: 'Optimize termination', decision: 'LLM "can you improve?" check + hard limits (grade ≥ 9 + no core gaps, max iterations)', adr: '[0009](../adr/0009-optimize-cycle-termination.md)' },
+  { axis: 'Loop termination', decision: 'Customizer answers YES/NO "could this be truthfully improved further?" after each edit + veracity override + iteration budget', adr: '[0018](../adr/0018-shared-customize-grade-veracity-loop.md)' },
 ];
 
 export const GROUPS = [
@@ -83,7 +83,7 @@ export const NODES = [
     one: 'The brain — a LangGraph StateGraph that runs the per-job pipeline, with a plain-function prep phase.',
     what: 'The control plane: prep phase (feasibility, fetch, discover) runs as plain functions, then a per-job LangGraph StateGraph handles ingest, grading, customization, optimization loops, truthfulness, and routing. Each job runs as a separate graph invocation with SqliteSaver checkpointing for resumability. It invokes LLMs for cognitive tasks and handles all plumbing itself.',
     how: '<code>pipeline/__main__.py</code> + <code>pipeline/</code> package. Acquires a file lock, loads config from <code>config.json</code>, runs prep functions, invokes the per-job graph for each new job. Graph nodes call <code>devin -p</code> for LLM work via <code>pipeline/infrastructure/devin_cli.py</code> (wrapped by <code>pipeline/infrastructure/llm_interface.py</code>). Commits and pushes at the end.',
-    steps: [['Lock', 'Acquire <code>.devin/pipeline.lock</code> to prevent concurrent runs.'], ['Config', 'Load thresholds, timeouts, model names from config.json.'], ['Prep 1-2', 'Feasibility check + fetch JDs (plain functions).'], ['Prep 3', 'Discover + dedup new jobs (plain function).'], ['Per-job graph', 'For each new job: ingest → grade JD → triage → customize → grade resume → optimize loop → truthfulness → stages/4_ready/stages/6_rejected.'], ['Checkpoint', 'SqliteSaver at <code>data/jobs.db</code> — interrupted runs resume per job.'], ['Finish', 'Commit, push, notify, release lock.']],
+    steps: [['Lock', 'Acquire <code>.devin/pipeline.lock</code> to prevent concurrent runs.'], ['Config', 'Load thresholds, timeouts, model names from config.json.'], ['Prep 1-2', 'Feasibility check + fetch JDs (plain functions).'], ['Prep 3', 'Discover + dedup new jobs (plain function).'], ['Per-job graph', 'For each new job: ingest → grade JD → triage → [customize → grade resume → veracity → should_continue] loop → final veracity gate → finalize → stages/4_ready/stages/6_rejected.'], ['Checkpoint', 'SqliteSaver at <code>data/jobs.db</code> — interrupted runs resume per job.'], ['Finish', 'Commit, push, notify, release lock.']],
     cond: [
       { q: 'Should optimization iterations run in parallel for multiple jobs?', r: 'No — sequential is safer and cost is bounded by max_optimization_iterations (2026-08-24).' },
     ] },
@@ -172,8 +172,8 @@ export const NODES = [
     cond: [] },
 
   { id: 'RJ', code: 'RJ', name: 'Rejected', short: 'REJECTED', group: 'triage', gx: 15, gy: 5, w: 2, d: 2, h: 16, kind: 'screen',
-    one: 'Abandoned listings — weak fit or couldn\'t optimize the resume.',
-    what: 'Two subfolder types: <code>[JOB-FIT]</code> (JD grade 6-7.9, weak overall fit) and <code>[RESUME]</code> (resume grade &lt; 9 after optimization loop). Kept for reference.',
+    one: 'Abandoned listings — weak fit or no passing resume version.',
+    what: 'Two subfolder types: <code>[JOB-FIT]</code> (JD grade 6-7.9, weak overall fit) and <code>[RESUME]</code> (no version passed grade ≥ 9 + veracity after the customize loop). Kept for reference.',
     how: 'Filesystem: <code>stages/6_rejected/[JOB-FIT] &lt;company-role&gt;/</code> or <code>stages/6_rejected/[RESUME] &lt;company-role&gt;/</code>.',
     steps: [],
     cond: [] },
@@ -181,7 +181,7 @@ export const NODES = [
   // ── Customization ──
   { id: 'CU', code: 'CU', name: 'Customizer', short: 'CUSTOMIZER', group: 'custom', gx: 17, gy: 3, w: 2, d: 2, h: 20, kind: 'cards',
     one: 'LLM task 3 — edits a pre-copied resume from the reference pool to optimally match the JD.',
-    what: 'The orchestrator pre-copies the base resume to <code>stages/2_stages/2_drafts/drafts/&lt;lt;slug&gt;/[TBD] resume-v1.md</code>. The customizer edits it in place — pulling relevant experience from LinkedIn, rephrasing, condensing, reordering. Self-measures with count_lines and self-trims if over 75 rendered lines. Also serves as the optimizer (re-invoked with grader feedback). The JD grade is passed to the first customization prompt.',
+    what: 'The orchestrator pre-copies a starting draft to <code>stages/2_drafts/&lt;slug&gt;/[TBD] resume-vN.md</code> — the base resume for v1, the previous version for v2+. The customizer edits it in place — pulling relevant experience from LinkedIn, rephrasing, condensing, reordering. Self-measures with count_lines and self-trims if over 75 rendered lines. One agent handles both first drafts and revisions (a revision carries grader + veracity feedback), and ends every call with a YES/NO on whether further truthful improvement is possible — the loop\'s stopping signal (ADR-0018). The JD grade is passed to the first customization prompt.',
     how: 'customizer-model via <code>devin -p</code> (automated) or custom subagent profile <code>util/agent-profiles/customizer.md</code> (debug). Prompt: <code>build_customize_prompt()</code>. Follows the customization protocol strictly. Runs <code>count_lines</code> via exec for self-measurement.',
     steps: [['Read inputs', 'Pre-copied base resume + protocol + LinkedIn + JD + JD grade + few-shot examples.'], ['Customize', 'Edit the pre-copied resume in place. Draw from the reference pool to optimally match the JD. Rephrase, condense, reorder, pull — all valid.'], ['Self-measure', 'Run <code>python3 -m pipeline.helpers.count_lines --json</code> on the output.'], ['Self-trim', 'If &gt; 75 rendered lines, trim least JD-relevant bullets. Up to 3 passes.']],
     cond: [
@@ -197,8 +197,8 @@ export const NODES = [
 
   { id: 'DR', code: 'DR', name: 'Drafts', short: 'DRAFTS', group: 'custom', gx: 17, gy: 7, w: 2, d: 2, h: 16, kind: 'screen',
     one: 'The folder where resumes go through the customization and grading loop.',
-    what: 'Each job gets a folder <code>stages/2_stages/2_drafts/drafts/&lt;lt;company-role&gt;/</code> with <code>[TBD] resume-vN.md</code> files. After grading, renamed to <code>[score] resume-vN.md</code>. The optimization loop iterates here until the grade is ≥ 9 or no further improvement is possible.',
-    how: 'Filesystem. <code>[TBD]</code> = ungraded, <code>[score]</code> = graded. Version numbers increment in the grade-improve loop (v1, v2, v3...).',
+    what: 'Each job gets a folder <code>stages/2_drafts/&lt;company-role&gt;/</code> with <code>[TBD] resume-vN.md</code> files. After grading, renamed to <code>[score] resume-vN.md</code>. The customize-grade-veracity loop iterates here until the customizer says no further truthful improvement is possible or the version budget is exhausted.',
+    how: 'Filesystem. <code>[TBD]</code> = ungraded, <code>[score]</code> = graded. Version numbers increment in the loop (v1, v2, v3...); only the best passing version ships to stages/4_ready/.',
     steps: [],
     cond: [] },
 
@@ -219,7 +219,7 @@ export const NODES = [
 
   { id: 'TV', code: 'TV', name: 'Truthfulness Reviewer', short: 'VERACITY', group: 'gates', gx: 20, gy: 7, w: 2, d: 2, h: 20, kind: 'cards',
     one: 'LLM task 5 — verifies every resume claim against the base resume and LinkedIn.',
-    what: 'Reads the veracity protocol, customized resume, base resume, and full career history. Classifies every claim into one of 4 buckets. If all claims verified → replies VERIFIED. If not → replies UNVERIFIED with specific claims to fix. Mandatory before moving to stages/4_ready/.',
+    what: 'Reads the veracity protocol, customized resume, base resume, and full career history. Classifies every claim into one of 4 buckets. If all claims verified → replies VERIFIED. If not → replies UNVERIFIED with specific claims to fix. Runs twice per version lifecycle (ADR-0018): inside the customize loop on every version grading ≥ 9 (a failed review forces a repair revision while budget remains), and once more after the loop as the final gate on the selected version — with fallback to the next-best passing candidate if it fails.',
     how: 'grader-model via <code>devin -p</code> (automated) or <code>util/agent-profiles/truthfulness-reviewer.md</code> (debug). Protocol: <code>_config/veracity-protocol.md</code>. Writes JSON to <code>.veracity/&lt;slug&gt;/verification.json</code>.',
     steps: [['Read protocol', 'Load veracity protocol from <code>_config/veracity-protocol.md</code>.'], ['Read resume', 'Load the customized resume.'], ['Read sources', 'Load base resume + full career history.'], ['Classify', 'Per-claim: verified in base, verified in LinkedIn, partial, or unverified.'], ['Synthesize', 'All verified → VERIFIED. Any unverified → UNVERIFIED + list.'], ['Write JSON', 'Write result to <code>.veracity/&lt;slug&gt;/verification.json</code>']],
     cond: [] },
@@ -236,8 +236,8 @@ export const NODES = [
   // ── Output ──
   { id: 'RD', code: 'RD', name: 'Ready', short: 'READY', group: 'out', gx: 24, gy: 4, w: 2, d: 2, h: 16, kind: 'screen',
     one: 'Passing resumes awaiting manual application.',
-    what: 'A resume moves here only if grade ≥ 9 AND truthfulness verified. The entire folder (JD + resume) is moved from stages/2_drafts/ to stages/4_ready/. The user reviews and submits manually.',
-    how: 'Filesystem: <code>stages/4_stages/4_ready/ready/&lt;lt;company-role&gt;/</code>. Moved by <code>step10_ready_node()</code> in <code>pipeline/steps/step10_finalize.py</code>.',
+    what: 'A resume moves here only if grade ≥ 9 AND it passed the final truthfulness gate after the customize loop. The entire folder (JD + the winning resume only — non-selected versions are pruned) is moved from stages/2_drafts/ to stages/4_ready/. The user reviews and submits manually.',
+    how: 'Filesystem: <code>stages/4_ready/&lt;company-role&gt;/</code>. Moved by <code>step11_ready_node()</code> in <code>pipeline/steps/step11_finalize.py</code>.',
     steps: [],
     cond: [] },
 
@@ -296,6 +296,7 @@ export const FLOWS = [
     ['CU', 'CL', 'measure', { cmd: 'python3 -m pipeline.helpers.count_lines --json' }, 'xy'],
     ['CL', 'CU', 'line count', { total: 72, ceiling: 75 }, 'yx'],
     ['CU', 'DR', 'rewrite (trimmed)', { file: '[TBD] resume-v1.md', lines: 70 }, 'yx'],
+    ['CU', 'OR', 'YES/NO outcome', { signal: 'could this be truthfully improved further?' }, 'yx'],
   ]},
   { id: 'resgrade', name: 'Resume grading', hops: [
     ['OR', 'RG', 'grade prompt', { slug: '...', version: 'v1' }, 'xy'],
@@ -346,7 +347,7 @@ export const CH = [
 
   { id: 'write', title: 'Customizing the resume', reveal: ['CU', 'CL'],
     lede: `The orchestrator pre-copies the base resume. The customizer edits it in place, measures with count_lines, and self-trims if over 75 lines.`,
-    story: `<p>The <mark>customizer</mark> is LLM task 3 — and also the optimizer (same agent, re-invoked with grader feedback). The orchestrator pre-copies the base resume to <code>[TBD] resume-v1.md</code> and passes the JD grade. The customizer edits the copy in place — no recreating from scratch. It runs <code>count_lines</code> during its own turn to self-measure, keeping full context for smarter trim decisions. Up to 3 trim passes before accepting.</p>`,
+    story: `<p>The <mark>customizer</mark> is LLM task 3 — one agent for both first drafts and revisions (ADR-0018; a revision carries grader + veracity feedback). The orchestrator pre-copies the starting draft to <code>[TBD] resume-vN.md</code> and passes the JD grade. The customizer edits the copy in place — no recreating from scratch. It runs <code>count_lines</code> during its own turn to self-measure, keeping full context for smarter trim decisions. After editing it answers YES/NO: could this be truthfully improved further? That answer is the loop's stopping signal.</p>`,
     flow: [['OR', 'DR', 'pre-copy base', { file: '[TBD] resume-v1.md' }], ['OR', 'CU', 'customize (edit in place)', { slug: '...', jdGrade: 8.5 }], ['CU', 'CL', 'measure', { cmd: 'count_lines --json' }], ['CL', 'CU', '72 lines', { total: 72, ceiling: 75 }]] },
 
   { id: 'resgrade', title: 'Grading the resume', reveal: ['RG', 'GL'],
@@ -356,12 +357,12 @@ export const CH = [
 
   { id: 'truth', title: 'Is it true?', reveal: ['TV', 'HK'],
     lede: `A truthfulness verifier checks every claim against the LinkedIn superset. Hooks enforce integrity throughout.`,
-    story: `<p>The <mark>truthfulness reviewer</mark> is LLM task 5 — mandatory before moving to stages/4_ready/. The <mark>hooks</mark> are the hard guarantees: no score tampering, no unapproved exec, no completion with failing grades. Together they ensure the resume is both good (≥9) and honest.</p>`,
+    story: `<p>The <mark>truthfulness reviewer</mark> is LLM task 5 — runs inside the loop on every version grading ≥ 9, and once more as the final gate on the selected version before it ships (with fallback to the next-best candidate). The <mark>hooks</mark> are the hard guarantees: no score tampering, no unapproved exec, no completion with failing grades. Together they ensure the resume is both good (≥9) and honest.</p>`,
     flow: [['OR', 'TV', 'verify', { slug: '...' }], ['TV', 'BR', 'read base', {}], ['TV', 'LE', 'read LinkedIn', {}], ['TV', 'OR', 'VERIFIED', { result: 'all claims verified' }]] },
 
   { id: 'done', title: 'Done', reveal: ['RD', 'NO'],
     lede: `Passing resumes land in stages/4_ready/. The user gets a push notification.`,
-    story: `<p>A resume moves to <mark>stages/4_ready/</mark> only if grade ≥ 9 AND truthfulness verified. The user reviews and submits manually — the agent never submits.</p>`,
+    story: `<p>A resume moves to <mark>stages/4_ready/</mark> only if grade ≥ 9 AND it survived the final truthfulness gate — the selected version is re-verified after the loop, with fallback to earlier passing versions. The user reviews and submits manually — the agent never submits.</p>`,
     flow: [['OR', 'RD', 'move to ready', { action: 'move_dir' }], ['OR', 'NO', 'notification', { type: 'high-priority' }]] },
 
   { id: 'later', title: 'Later', reveal: ['FF', 'SU'],
@@ -377,7 +378,7 @@ export const CH = [
 
 export const HOW_HTML = `<div class="eyebrow">job-hunter · v1</div><h1 class="t">How it's built</h1><div class="sub">the shape and what sits around it</div>
 <h3 class="sec">Architecture</h3>
-<p>Code orchestrates, LLMs cognate. <code>pipeline/__main__.py</code> + the <code>pipeline/</code> package handle all plumbing (file I/O, HTTP fetching, state management, routing) via Python. A LangGraph StateGraph runs the per-job pipeline with conditional edges and an optimize cycle. LLM agents are invoked via <code>devin -p</code> for 5 cognitive tasks only: feasibility checking, JD grading, resume customization, resume grading, and truthfulness verification.</p>
+<p>Code orchestrates, LLMs cognate. <code>pipeline/__main__.py</code> + the <code>pipeline/</code> package handle all plumbing (file I/O, HTTP fetching, state management, routing) via Python. A LangGraph StateGraph runs the per-job pipeline with conditional edges and a customize-grade-veracity cycle. LLM agents are invoked via <code>devin -p</code> for 5 cognitive tasks only: feasibility checking, JD grading, resume customization, resume grading, and truthfulness verification.</p>
 <h3 class="sec">Filesystem</h3>
 <pre>job-hunter/
   pipeline/           # pipeline package (infrastructure, steps, helpers)

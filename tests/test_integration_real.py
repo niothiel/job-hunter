@@ -20,9 +20,6 @@ Usage:
     # Run just the JD grader:
     RUN_REAL_LLM=1 python3 -m pytest tests/test_integration_real.py::test_real_jd_grader -v -s
 
-    # Run just the optimize decision:
-    RUN_REAL_LLM=1 python3 -m pytest tests/test_integration_real.py::test_real_optimize -v -s
-
     # Run just the feasibility checker:
     RUN_REAL_LLM=1 python3 -m pytest tests/test_integration_real.py::test_real_feasibility -v -s
 
@@ -44,7 +41,7 @@ from pathlib import Path
 
 import pytest
 
-from pipeline.infrastructure.config import PipelineConfig
+from pipeline.infrastructure.config import PipelineConfig, load_config
 from pipeline.infrastructure.llm_interface import RealLLM
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.state import (
@@ -62,6 +59,22 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_REAL_LLM") != "1",
     reason="Set RUN_REAL_LLM=1 to run real LLM integration tests (5-min timeout each).",
 )
+
+
+# ─── Phoenix tracing (optional) ──────────────────────────────────────────────
+# When PHOENIX_HOST is set, enable tracing so real LLM calls emit spans to the
+# Phoenix dashboard.  No-op when unset — tests run fine without Phoenix.
+
+@pytest.fixture(autouse=True)
+def _setup_phoenix_tracing(tmp_path):
+    from pipeline.infrastructure.observability import setup_tracing, is_tracing_enabled
+    if os.environ.get("PHOENIX_HOST"):
+        enabled = setup_tracing(fallback_dir=str(tmp_path / "exports"))
+        if enabled:
+            print(f"\n  🔭 Phoenix tracing enabled → {os.environ['PHOENIX_HOST']}")
+        else:
+            print(f"\n  ⚠️  PHOENIX_HOST set but tracing failed to initialize")
+    yield
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -108,9 +121,17 @@ def real_paths(tmp_path: Path) -> Paths:
     """Temp workspace with real profile files copied in."""
     paths = Paths.from_hunter_dir(tmp_path)
 
-    # Copy real profile files
-    real_base = HUNTER_DIR / "_config" / "profile" / "base-resume" / "base-resume.md"
-    real_linkedin = HUNTER_DIR / "_config" / "profile" / "full-experience" / "full-experience.md"
+    # Copy real profile files — filenames come from config.profile so the
+    # test follows whatever the user configured.
+    real_cfg = load_config(HUNTER_DIR / "config.json")
+    real_base = (
+        HUNTER_DIR / "_config" / "profile" / "base-resume"
+        / real_cfg.profile.base_resume_file
+    )
+    real_linkedin = (
+        HUNTER_DIR / "_config" / "profile" / "full-experience"
+        / real_cfg.profile.linkedin_experience_file
+    )
     paths.base_resume.parent.mkdir(parents=True, exist_ok=True)
     paths.linkedin_experience.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(real_base, paths.base_resume)
@@ -122,7 +143,7 @@ def real_paths(tmp_path: Path) -> Paths:
 
     # Copy few-shot examples (needed by customizer)
     examples_src = HUNTER_DIR / "docs" / "examples" / "customized-resumes"
-    examples_dst = tmp_path / "docs" / "examples" / "customized-resumes"
+    examples_dst = tmp_path / "examples" / "customized-resumes"
     if examples_src.exists():
         examples_dst.mkdir(parents=True, exist_ok=True)
         for f in examples_src.glob("*.md"):
@@ -167,7 +188,7 @@ def real_logger() -> structlog.stdlib.BoundLogger:
 def _make_node_config(llm, logger, config, paths, export_dir=None):
     """Build a RunnableConfig with the given deps.
 
-    If export_dir is set, wraps the LLM to pass --export <export_dir>/<test>.md
+    If export_dir is set, wraps the LLM to pass --export <export_dir>/<test>.json
     so the agent's thoughts/tool calls are captured even if it's killed by timeout.
     """
     if export_dir is not None:
@@ -184,7 +205,7 @@ def _make_node_config(llm, logger, config, paths, export_dir=None):
                          permission_mode="dangerous", config_path=None,
                          job_slug=None, step=None, **kwargs):
                 self._call_count += 1
-                export_file = export_dir / f"call-{self._call_count}.md"
+                export_file = export_dir / f"call-{self._call_count}.json"
                 return original_llm(
                     prompt, model=model, timeout=timeout, workspace=workspace,
                     retries=retries, retry_delay=retry_delay,
@@ -212,11 +233,11 @@ def _make_node_config(llm, logger, config, paths, export_dir=None):
 
 
 def test_real_customizer(real_paths, real_config, real_logger, tmp_path):
-    """Call the real customizer agent (customizer-model) to customize a resume.
+    """Call the real customizer agent (DEFAULT_LLM_MODEL) to customize a resume.
 
     Verifies:
     - The LLM is called (not skipped)
-    - A resume file is produced at stages/2_drafts/<slug>/[TBD] resume-v1.md
+    - A resume file is produced at drafts/<slug>/[TBD] resume-v1.md
     - The file is non-empty and contains markdown
     - The file is different from the base resume (was actually customized)
     - The call completes within the customize step's allotted timeout
@@ -263,7 +284,7 @@ def test_real_customizer(real_paths, real_config, real_logger, tmp_path):
 
 
 def test_real_grader(real_paths, real_config, real_logger, tmp_path):
-    """Call the real grader agent (grader-model) to grade a customized resume.
+    """Call the real grader agent (DEFAULT_LLM_MODEL) to grade a customized resume.
 
     Verifies:
     - The LLM is called (not skipped)
@@ -275,7 +296,7 @@ def test_real_grader(real_paths, real_config, real_logger, tmp_path):
     """
     from pipeline.steps.step7_grade_resume import step7_grade_resume_node
 
-    # Set up: create a JD file and a resume file in stages/2_drafts/<slug>/
+    # Set up: create a JD file and a resume file in drafts/<slug>/
     job_dir = real_paths.drafts / SLUG
     job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -329,7 +350,7 @@ def test_real_grader(real_paths, real_config, real_logger, tmp_path):
 
 
 def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
-    """Call the real truthfulness verifier (grader-model) to verify a resume.
+    """Call the real truthfulness verifier (DEFAULT_LLM_MODEL) to verify a resume.
 
     Verifies:
     - The LLM is called (not skipped)
@@ -338,9 +359,9 @@ def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
     - If unverified, unverifiable_claims is populated
     - The call completes within the truthfulness step's allotted timeout
     """
-    from pipeline.steps.step9_veracity import step9_veracity_node
+    from pipeline.steps.step8_veracity import step8_veracity_node
 
-    # Set up: create a graded resume in stages/2_drafts/<slug>/
+    # Set up: create a graded resume in drafts/<slug>/
     job_dir = real_paths.drafts / SLUG
     job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -371,7 +392,7 @@ def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
 
     timeout = real_config.timeout_for("truthfulness")
     start = time.monotonic()
-    result = step9_veracity_node(state, node_config)
+    result = step8_veracity_node(state, node_config)
     elapsed = time.monotonic() - start
     assert elapsed < timeout, (
         f"Truthfulness took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
@@ -383,6 +404,9 @@ def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
     assert "verification" in result
     verification = result["verification"]
     assert isinstance(verification.verified, bool), "verified field is not a boolean"
+    # Per-version record appended (ADR-0018)
+    assert "version_history" in result
+    assert result["version_history"][0].version == 1
 
     if not verification.verified:
         assert len(verification.unverifiable_claims) > 0, "Unverified but no claims listed"
@@ -394,7 +418,7 @@ def test_real_truthfulness(real_paths, real_config, real_logger, tmp_path):
 
 
 def test_real_jd_grader(real_paths, real_config, real_logger, tmp_path):
-    """Call the real JD grader (customizer-model) to grade a JD.
+    """Call the real JD grader (DEFAULT_LLM_MODEL) to grade a JD.
 
     Verifies:
     - The LLM returns JSON (not GRADE:/JUSTIFICATION: text format)
@@ -448,72 +472,8 @@ def test_real_jd_grader(real_paths, real_config, real_logger, tmp_path):
         real_logger.info("\n  PASS: JD grader detected clearance requirement")
 
 
-def test_real_optimize(real_paths, real_config, real_logger, tmp_path):
-    """Call the real optimize decision (customizer-model) to check 'can improve?'.
-
-    Verifies:
-    - The LLM is called (not skipped via exit conditions)
-    - The response is YES or NO
-    - optimize_can_improve is a boolean
-    - The call completes within the optimize step's allotted timeout
-    """
-    from pipeline.steps.step8_optimize import step8_optimize_node
-
-    # Set up: create a resume file in stages/2_drafts/<slug>/ with a below-threshold grade
-    job_dir = real_paths.drafts / SLUG
-    job_dir.mkdir(parents=True, exist_ok=True)
-
-    jd_file = job_dir / "[8.5] job-description.md"
-    jd_file.write_text(SAMPLE_JD, encoding="utf-8")
-
-    resume_file = job_dir / "[7.0] resume-v1.md"
-    shutil.copy2(real_paths.base_resume, resume_file)
-
-    llm = RealLLM()
-    export_dir = tmp_path / "exports"
-    node_config = _make_node_config(llm, real_logger, real_config, real_paths, export_dir=export_dir)
-
-    state = JobState(
-        slug=SLUG,
-        jd_text=SAMPLE_JD,
-        resume_versions=[ResumeVersion(version=1, path=resume_file)],
-        latest_grade=ResumeGrade(
-            grade=7.0,
-            per_criterion=[
-                Criterion(
-                    requirement="Kubernetes experience",
-                    tier="core",
-                    assessment=Assessment.PARTIAL,
-                    comment="Mentioned but not deeply",
-                ),
-            ],
-        ),
-        optimize_iteration_count=0,
-    )
-
-    timeout = real_config.timeout_for("optimize")
-    start = time.monotonic()
-    result = step8_optimize_node(state, node_config)
-    elapsed = time.monotonic() - start
-    assert elapsed < timeout, (
-        f"Optimize took {elapsed:.1f}s, exceeding the {timeout}s timeout — "
-        f"the per-step override may not be applied"
-    )
-    real_logger.info(f"  PASS: optimize completed in {elapsed:.1f}s (timeout={timeout}s)")
-
-    # Verify state update
-    assert "optimize_can_improve" in result
-    can_improve = result["optimize_can_improve"]
-    assert isinstance(can_improve, bool), f"optimize_can_improve is not a boolean: {can_improve}"
-
-    if can_improve:
-        real_logger.info("\n  PASS: optimize says YES — can improve further")
-    else:
-        real_logger.info("\n  PASS: optimize says NO — done iterating")
-
-
 def test_real_feasibility(real_paths, real_config, real_logger, tmp_path):
-    """Call the real feasibility checker (customizer-model) to check job relevance.
+    """Call the real feasibility checker (DEFAULT_LLM_MODEL) to check job relevance.
 
     Verifies:
     - The LLM returns a JSON array of verdicts
@@ -521,20 +481,23 @@ def test_real_feasibility(real_paths, real_config, real_logger, tmp_path):
     - The rationale is a non-empty string
     - The URL mapping is correct
     """
+    import sys
     from pipeline.infrastructure.feasibility_checker import DevinCLIChecker
     from pipeline.infrastructure.config import load_config
-    from pipeline.infrastructure.llm_interface import RealLLM
 
-    # Load the real feasibility prompt from config.json
-    config_file = HUNTER_DIR / "config.json"
+    # Load the real feasibility prompt from pipeline-config.json
+    config_file = HUNTER_DIR / ".devin" / "pipeline-config.json"
     config = load_config(config_file)
     prompt = config.feasibility_prompt if config.feasibility_prompt else ""
     if not prompt:
         # Fall back to a basic prompt if not configured
         prompt = "Filter for senior engineering leadership roles at Big Tech companies."
 
+    # Use the injected RealLLM (from the real_paths fixture chain) so
+    # timing data is captured in llm.calls — DI seam for testability.
+    llm = RealLLM()
     checker = DevinCLIChecker(
-        llm=RealLLM(),
+        llm=llm,
         model=real_config.models.customizer,
         prompt=prompt,
         timeout=TIMEOUT_SECONDS,

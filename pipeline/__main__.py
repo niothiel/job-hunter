@@ -13,11 +13,12 @@ Usage:
 --job <slug>: Reprocess a single job by company-role slug.
 --step <name>: Run a single node directly (for debugging). One of:
     feasibility, fetch, discover, grade-jd, triage, customize,
-    grade-resume, optimize, truthfulness, ready
+    grade-resume, truthfulness, should-continue, finalize, ready
 """
 from __future__ import annotations
 
 import argparse
+import structlog
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,7 @@ from pipeline.infrastructure.lifecycle import (
     update_scraper,
 )
 from pipeline.infrastructure.llm_interface import RealLLM
+from pipeline.infrastructure.observability import setup_tracing
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.state import JobState, TriageDestination, build_job_state_from_filesystem
 from pipeline.steps.step1_feasibility import step1_feasibility
@@ -54,10 +56,12 @@ from pipeline.steps.step3_discover import step3_discover
 
 # Lazy import to avoid pulling all node modules at startup
 def _get_step_map():
-    from pipeline.steps.step10_finalize import (
+    from pipeline.steps.step10_final_veracity import step10_final_veracity_node
+    from pipeline.steps.step11_finalize import (
         rejected_job_fit_node,
         rejected_resume_node,
-        step10_ready_node,
+        step11_finalize_node,
+        step11_ready_node,
         trash_node,
     )
     from pipeline.steps.step3_ingest import step3_ingest_node
@@ -65,17 +69,19 @@ def _get_step_map():
     from pipeline.steps.step5_triage import step5_triage_node
     from pipeline.steps.step6_customize import step6_customize_node
     from pipeline.steps.step7_grade_resume import step7_grade_resume_node
-    from pipeline.steps.step8_optimize import step8_optimize_node
-    from pipeline.steps.step9_veracity import step9_veracity_node
+    from pipeline.steps.step8_veracity import step8_veracity_node
+    from pipeline.steps.step9_should_continue import step9_should_continue_node
 
     return {
         "grade-jd": step4_grade_jd_node,
         "triage": step5_triage_node,
         "customize": step6_customize_node,
         "grade-resume": step7_grade_resume_node,
-        "optimize": step8_optimize_node,
-        "truthfulness": step9_veracity_node,
-        "ready": step10_ready_node,
+        "truthfulness": step8_veracity_node,
+        "should-continue": step9_should_continue_node,
+        "final-truthfulness": step10_final_veracity_node,
+        "finalize": step11_finalize_node,
+        "ready": step11_ready_node,
         "trash": trash_node,
         "rejected_job_fit": rejected_job_fit_node,
         "rejected_resume": rejected_resume_node,
@@ -103,8 +109,8 @@ def parse_args() -> argparse.Namespace:
         "--step", type=str, default=None,
         help="Run only one step/node (for debugging): "
              "feasibility, fetch, discover, grade-jd, triage, customize, "
-             "grade-resume, optimize, truthfulness, ready, trash, "
-             "rejected_job_fit, rejected_resume, ingest",
+             "grade-resume, truthfulness, should-continue, finalize, ready, "
+             "trash, rejected_job_fit, rejected_resume, ingest",
     )
     return parser.parse_args()
 
@@ -130,18 +136,19 @@ def run_single_step(
         return
 
     state = build_job_state_from_filesystem(slug, paths)
+    job_logger = logger.bind(slug=slug, node=step_name)
     node_config: RunnableConfig = {
         "configurable": {
             "llm": llm,
-            "logger": logger,
+            "logger": job_logger,
             "config": config,
             "paths": paths,
         }
     }
 
-    logger.info(f"Running step '{step_name}' for '{slug}'")
+    job_logger.info(f"Running step '{step_name}' for '{slug}'")
     result = node_fn(state, node_config)
-    logger.info(f"Step result: {result}")
+    job_logger.info(f"Step result: {result}")
 
     # Pretty-print the updated state for debugging
     updated = state.model_copy(update=result)
@@ -153,16 +160,29 @@ def run_single_step(
 
 def main() -> None:
     args = parse_args()
-    hunter_dir = Path(__file__).resolve().parent
+    hunter_dir = Path(__file__).resolve().parent.parent
     paths = Paths.from_hunter_dir(hunter_dir)
     logger = setup_logging(paths)
     config = load_config(paths.config_file)
+
+    # Rebuild Paths with the configured profile filenames. The config
+    # file's own location stays a fixed convention — it's how the config
+    # is found in the first place.
+    paths = Paths.from_hunter_dir(
+        hunter_dir,
+        base_resume_filename=config.profile.base_resume_file,
+        linkedin_experience_filename=config.profile.linkedin_experience_file,
+    )
 
     # Apply --dry-run flag (overrides config)
     if args.dry_run:
         config = config.model_copy(update={"dry_run": True})
 
-    llm = RealLLM()
+    llm = RealLLM(db_path=str(paths.jobs_db), export_dir=str(paths.exports))
+
+    # LLM observability (ADR-0014) — optional, no-op without Phoenix installed.
+    if setup_tracing(fallback_dir=str(paths.exports)):
+        logger.info("Phoenix tracing enabled.")
 
     logger.info("=" * 60)
     logger.info("Job Hunter Pipeline starting (LangGraph)")
@@ -301,8 +321,8 @@ def main() -> None:
                 return
             update_scraper(paths, logger)
 
-        # Step 1: Feasibility check
-        if not args.step or args.step == "feasibility":
+        # Step 1: Feasibility check (skip in --job mode — single job bypasses prep)
+        if not args.job and (not args.step or args.step == "feasibility"):
             step1_feasibility(config, logger, store, paths, llm=llm)
 
         # Step 2: Fetch missing JDs
@@ -352,10 +372,14 @@ def main() -> None:
                     title=job.get("title", ""),
                     jd_text=job.get("description", ""),
                 )
+                # Bind slug onto a per-job logger so every log call inside
+                # the graph (and the per-job error boundary below) carries
+                # the slug correlation key (ADR-0014).
+                job_logger = logger.bind(slug=slug)
                 node_config: RunnableConfig = {
                     "configurable": {
                         "llm": llm,
-                        "logger": logger,
+                        "logger": job_logger,
                         "config": config,
                         "paths": paths,
                     },
@@ -368,7 +392,7 @@ def main() -> None:
                 if final_state.final_destination == TriageDestination.READY:
                     notify_ready(slug, final_state.title)
 
-                logger.info(
+                job_logger.info(
                     f"  {slug}: -> {final_state.final_destination}"
                     if final_state.final_destination
                     else f"  {slug}: no final destination"

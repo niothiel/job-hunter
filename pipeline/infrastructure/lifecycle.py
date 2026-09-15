@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 import os
 import shutil
 import subprocess
+import structlog
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,37 +29,80 @@ from pipeline.infrastructure.paths import Paths
 
 # ─── Logging ───────────────────────────────────────────────────────────────
 
+# Processors shared between structlog's own rendering and the stdlib
+# ProcessorFormatter's foreign_pre_chain (so records from both structlog
+# and legacy stdlib loggers get the same contextvars/timestamp/level).
+_SHARED_PROCESSORS: list = [
+    structlog.contextvars.merge_contextvars,
+    structlog.processors.add_log_level,
+    structlog.processors.TimeStamper(fmt="iso"),
+    structlog.stdlib.add_logger_name,
+]
 
-def setup_logging(paths: Paths) -> logging.Logger:
-    """Set up per-run logging to logs/pipeline-YYYY-MM-DD-HHMM.log + console."""
+
+def setup_logging(paths: Paths) -> structlog.stdlib.BoundLogger:
+    """Set up structured logging: JSON file handler + pretty console handler.
+
+    Uses structlog's stdlib bridge (ProcessorFormatter) so both structlog
+    loggers and any remaining stdlib ``logging.getLogger`` calls emit through
+    the same handlers with consistent formatting (ADR-0014).
+
+    - File handler: JSON lines, DEBUG level (machine-parseable).
+      Daily rotation via ``TimedRotatingFileHandler``, 30-day retention.
+    - Console handler: colored pretty output, INFO level (human-readable).
+
+    Returns a ``structlog.stdlib.BoundLogger`` — supports ``bind()`` for
+    slug/node correlation in the per-job loop.
+    """
     paths.logs.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
-    log_file = paths.logs / f"pipeline-{timestamp}.log"
+    log_file = paths.logs / "pipeline.log"
 
-    logger = logging.getLogger("pipeline")
-    logger.setLevel(logging.DEBUG)
-    logger.handlers.clear()
+    structlog.configure(
+        processors=_SHARED_PROCESSORS + [
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
 
-    # File handler — debug level
-    fh = logging.FileHandler(log_file)
+    # File handler — JSON, debug level, daily rotation, 30-day retention
+    fh = logging.handlers.TimedRotatingFileHandler(
+        log_file, when="midnight", interval=1, backupCount=30, encoding="utf-8",
+    )
     fh.setLevel(logging.DEBUG)
-    fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    logger.addHandler(fh)
+    fh.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=_SHARED_PROCESSORS,
+            processor=structlog.processors.JSONRenderer(),
+        )
+    )
 
-    # Console handler — info level
+    # Console handler — pretty colored, info level
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    ch.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
-    logger.addHandler(ch)
+    ch.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=_SHARED_PROCESSORS,
+            processor=structlog.dev.ConsoleRenderer(),
+        )
+    )
 
-    logger.info(f"Log file: {log_file}")
-    return logger
+    root = logging.getLogger("pipeline")
+    root.setLevel(logging.DEBUG)
+    root.handlers.clear()
+    root.addHandler(fh)
+    root.addHandler(ch)
+
+    log = structlog.get_logger("pipeline")
+    log.info("log_file", path=str(log_file))
+    return log
 
 
 # ─── Locking ──────────────────────────────────────────────────────────────
 
 
-def acquire_lock(paths: Paths, logger: logging.Logger) -> bool:
+def acquire_lock(paths: Paths, logger: structlog.stdlib.BoundLogger) -> bool:
     """Acquire the pipeline lock. Returns True if acquired, False if already held."""
     paths.devin_dir.mkdir(parents=True, exist_ok=True)
     if paths.lock_file.exists():
@@ -80,7 +126,7 @@ def acquire_lock(paths: Paths, logger: logging.Logger) -> bool:
     return True
 
 
-def release_lock(paths: Paths, logger: logging.Logger) -> None:
+def release_lock(paths: Paths, logger: structlog.stdlib.BoundLogger) -> None:
     """Release the pipeline lock."""
     if paths.lock_file.exists():
         try:
@@ -106,7 +152,7 @@ def load_state(paths: Paths) -> dict:
     }
 
 
-def save_state(state: dict, paths: Paths, logger: logging.Logger) -> None:
+def save_state(state: dict, paths: Paths, logger: structlog.stdlib.BoundLogger) -> None:
     """Save pipeline state."""
     paths.devin_dir.mkdir(parents=True, exist_ok=True)
     with open(paths.state_file, "w") as f:
@@ -117,7 +163,7 @@ def save_state(state: dict, paths: Paths, logger: logging.Logger) -> None:
 # ─── Scraper sync ──────────────────────────────────────────────────────────
 
 
-def get_scraper_sha(paths: Paths, logger: logging.Logger) -> str | None:
+def get_scraper_sha(paths: Paths, logger: structlog.stdlib.BoundLogger) -> str | None:
     """Get the current HEAD SHA of the scraper repo."""
     try:
         result = subprocess.run(
@@ -131,7 +177,7 @@ def get_scraper_sha(paths: Paths, logger: logging.Logger) -> str | None:
     return None
 
 
-def update_scraper(paths: Paths, logger: logging.Logger) -> bool:
+def update_scraper(paths: Paths, logger: structlog.stdlib.BoundLogger) -> bool:
     """Fetch + pull the scraper repo. Returns True if updated.
 
     A plain pull --ff-only suffices — the pipeline no longer writes to
@@ -172,7 +218,7 @@ def update_scraper(paths: Paths, logger: logging.Logger) -> bool:
 
 
 def check_scraper_updates(
-    state: dict, paths: Paths, logger: logging.Logger
+    state: dict, paths: Paths, logger: structlog.stdlib.BoundLogger
 ) -> bool:
     """Check if the scraper has new commits since last run.
 
@@ -198,7 +244,7 @@ def check_scraper_updates(
 
 
 def git_commit_and_push(
-    stats: dict, paths: Paths, logger: logging.Logger, git_push: bool
+    stats: dict, paths: Paths, logger: structlog.stdlib.BoundLogger, git_push: bool
 ) -> None:
     """Commit pipeline output and push to origin.
 
@@ -309,13 +355,43 @@ def git_commit_and_push(
 # ─── Cleanup ───────────────────────────────────────────────────────────────
 
 
-def cleanup_transient_dirs(paths: Paths, logger: logging.Logger) -> None:
-    """Clean up transient directories (.grading/, .veracity/).
+def cleanup_transient_dirs(paths: Paths, logger: structlog.stdlib.BoundLogger) -> None:
+    """Clean up transient directories (.grading/, .veracity/) + old log files.
 
-    These are gitignored and rebuilt each run. The grader and truthfulness
-    reviewer write JSON here during their turns; we clean up after.
+    Transient dirs are gitignored and rebuilt each run. The grader and
+    truthfulness reviewer write JSON here during their turns; we clean up
+    after.
+
+    Also purges log files in ``logs/`` older than 30 days (ADR-0014). This
+    catches any per-run files that predate the ``TimedRotatingFileHandler``
+    switch, and acts as a safety net alongside the handler's own retention.
     """
     for d in (paths.grading, paths.veracity):
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
             logger.debug(f"Cleaned up {d}")
+
+    # Purge log files older than 30 days (ADR-0014 log rotation).
+    _purge_old_logs(paths, logger)
+
+
+_LOG_RETENTION_DAYS = 30
+
+
+def _purge_old_logs(paths: Paths, logger: structlog.stdlib.BoundLogger) -> None:
+    """Delete log files in ``logs/`` older than ``_LOG_RETENTION_DAYS`` days."""
+    if not paths.logs.exists():
+        return
+    cutoff = time.time() - _LOG_RETENTION_DAYS * 86400
+    purged = 0
+    for entry in paths.logs.iterdir():
+        if not entry.is_file():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff:
+                entry.unlink()
+                purged += 1
+        except OSError:
+            pass
+    if purged:
+        logger.debug("purged_old_logs", count=purged, retention_days=_LOG_RETENTION_DAYS)

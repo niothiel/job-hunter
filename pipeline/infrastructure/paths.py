@@ -26,6 +26,7 @@ class Paths:
     in_progress: Path
     submitted: Path
     logs: Path
+    exports: Path
     grading: Path
     veracity: Path
     grades_log: Path
@@ -45,8 +46,18 @@ class Paths:
     agent_permissions: Path
 
     @staticmethod
-    def from_hunter_dir(hunter_dir: Path) -> Paths:
-        """Construct Paths from a given hunter root directory."""
+    def from_hunter_dir(
+        hunter_dir: Path,
+        *,
+        base_resume_filename: str = "base-resume.md",
+        linkedin_experience_filename: str = "full-experience.md",
+    ) -> Paths:
+        """Construct Paths from a given hunter root directory.
+
+        Profile filenames come from config.profile (PipelineConfig);
+        callers that have loaded config should pass them through. The
+        defaults match the generic names used by tests and fresh clones.
+        """
         scraper_dir = Path(
             os.environ.get(
                 "JOB_SCRAPER_DIR",
@@ -67,6 +78,7 @@ class Paths:
             in_progress=stages / "3_in-progress",
             submitted=stages / "5_submitted",
             logs=hunter_dir / "logs",
+            exports=hunter_dir / "logs" / "exports",
             grading=hunter_dir / ".grading",
             veracity=hunter_dir / ".veracity",
             grades_log=hunter_dir / ".grades.log",
@@ -84,7 +96,7 @@ class Paths:
             all_jobs_path=scraper_dir / "output" / "all_jobs.json",
             deltas_dir=scraper_dir / "output" / "deltas",
             deltas_index=scraper_dir / "output" / "deltas" / "index.jsonl",
-            base_resume=profile / "base-resume" / "base-resume.md",
-            linkedin_experience=profile / "full-experience" / "full-experience.md",
+            base_resume=profile / "base-resume" / base_resume_filename,
+            linkedin_experience=profile / "full-experience" / linkedin_experience_filename,
             agent_permissions=hunter_dir / "util" / "agent-profiles" / "agent-permissions.json",
         )

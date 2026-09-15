@@ -1,7 +1,7 @@
 """Shared fixtures for pipeline tests."""
 from __future__ import annotations
 
-import logging
+import structlog
 from pathlib import Path
 
 import pytest
@@ -36,12 +36,11 @@ def fake_llm() -> FakeLLM:
 
 
 @pytest.fixture
-def logger() -> logging.Logger:
-    """Quiet logger for tests."""
-    log = logging.getLogger("test")
-    log.handlers.clear()
-    log.setLevel(logging.WARNING)
-    return log
+def logger() -> structlog.stdlib.BoundLogger:
+    """Quiet structlog logger for tests (WARNING level)."""
+    import logging
+    logging.getLogger("test").setLevel(logging.WARNING)
+    return structlog.get_logger("test")
 
 
 @pytest.fixture

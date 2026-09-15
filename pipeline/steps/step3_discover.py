@@ -10,7 +10,7 @@ per-job graph.
 """
 from __future__ import annotations
 
-import logging
+import structlog
 
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.file_ops import discover_new_jobs
@@ -27,7 +27,7 @@ class PrepResult:
 
 
 def step3_discover(
-    logger: logging.Logger,
+    logger: structlog.stdlib.BoundLogger,
     store,
     paths: Paths,
 ) -> PrepResult:

@@ -21,7 +21,7 @@ An AI agent workspace that automates job applications: pulls listings from a job
 | Agent separation | Customizer, grader, and truthfulness verifier are distinct agents | — |
 | Pipeline engine | LangGraph StateGraph with Pydantic state + SqliteSaver checkpointer | [0005](../adr/0005-langgraph-as-pipeline-engine.md) |
 | Clearance detection | LLM-only (no regex) — JD grader returns CLEARANCE instead of a grade | [0007](../adr/0007-llm-only-clearance-check.md) |
-| Optimize termination | LLM "can you improve?" check + hard limits (grade ≥ 9 + no core gaps, max iterations) | [0009](../adr/0009-optimize-cycle-termination.md) |
+| Loop termination | Customizer answers YES/NO "could this be truthfully improved further?" after each edit + veracity override + iteration budget | [0018](../adr/0018-shared-customize-grade-veracity-loop.md) |
 
 ## Cost model
 
@@ -87,7 +87,7 @@ An AI agent workspace that automates job applications: pulls listings from a job
 2. **Config** — Load thresholds, timeouts, model names from config.json.
 3. **Prep 1-2** — Feasibility check + fetch JDs (plain functions).
 4. **Prep 3** — Discover + dedup new jobs (plain function).
-5. **Per-job graph** — For each new job: ingest → grade JD → triage → customize → grade resume → optimize loop → truthfulness → stages/4_ready/stages/6_rejected.
+5. **Per-job graph** — For each new job: ingest → grade JD → triage → [customize → grade resume → veracity → should_continue] loop → final veracity gate → finalize → stages/4_ready/stages/6_rejected.
 6. **Checkpoint** — SqliteSaver at <code>data/jobs.db</code> — interrupted runs resume per job.
 7. **Finish** — Commit, push, notify, release lock.
 
@@ -251,9 +251,9 @@ An AI agent workspace that automates job applications: pulls listings from a job
 
 #### RJ · Rejected
 
-**In one line.** Abandoned listings — weak fit or couldn't optimize the resume.
+**In one line.** Abandoned listings — weak fit or no passing resume version.
 
-**What it does.** Two subfolder types: `[JOB-FIT]` (JD grade 6-7.9, weak overall fit) and `[RESUME]` (resume grade < 9 after optimization loop). Kept for reference.
+**What it does.** Two subfolder types: `[JOB-FIT]` (JD grade 6-7.9, weak overall fit) and `[RESUME]` (no version passed grade ≥ 9 + veracity after the customize loop). Kept for reference.
 
 **How it's built.** Filesystem: `stages/6_rejected/[JOB-FIT] <company-role>/` or `stages/6_rejected/[RESUME] <company-role>/`.
 
@@ -266,7 +266,7 @@ An AI agent workspace that automates job applications: pulls listings from a job
 
 **In one line.** LLM task 3 — edits a pre-copied resume from the reference pool to optimally match the JD.
 
-**What it does.** The orchestrator pre-copies the base resume to `stages/2_stages/2_drafts/drafts/<lt;slug>/[TBD] resume-v1.md`. The customizer edits it in place — pulling relevant experience from LinkedIn, rephrasing, condensing, reordering. Self-measures with count_lines and self-trims if over 75 rendered lines. Also serves as the optimizer (re-invoked with grader feedback). The JD grade is passed to the first customization prompt.
+**What it does.** The orchestrator pre-copies a starting draft to `stages/2_drafts/<slug>/[TBD] resume-vN.md` — the base resume for v1, the previous version for v2+. The customizer edits it in place — pulling relevant experience from LinkedIn, rephrasing, condensing, reordering. Self-measures with count_lines and self-trims if over 75 rendered lines. One agent handles both first drafts and revisions (a revision carries grader + veracity feedback), and ends every call with a YES/NO on whether further truthful improvement is possible — the loop's stopping signal (ADR-0018). The JD grade is passed to the first customization prompt.
 
 **How it's built.** customizer-model via `devin -p` (automated) or custom subagent profile `util/agent-profiles/customizer.md` (debug). Prompt: `build_customize_prompt()`. Follows the customization protocol strictly. Runs `count_lines` via exec for self-measurement.
 
@@ -300,9 +300,9 @@ An AI agent workspace that automates job applications: pulls listings from a job
 
 **In one line.** The folder where resumes go through the customization and grading loop.
 
-**What it does.** Each job gets a folder `stages/2_stages/2_drafts/drafts/<lt;company-role>/` with `[TBD] resume-vN.md` files. After grading, renamed to `[score] resume-vN.md`. The optimization loop iterates here until the grade is ≥ 9 or no further improvement is possible.
+**What it does.** Each job gets a folder `stages/2_drafts/<company-role>/` with `[TBD] resume-vN.md` files. After grading, renamed to `[score] resume-vN.md`. The customize-grade-veracity loop iterates here until the customizer says no further truthful improvement is possible or the version budget is exhausted.
 
-**How it's built.** Filesystem. `[TBD]` = ungraded, `[score]` = graded. Version numbers increment in the grade-improve loop (v1, v2, v3...).
+**How it's built.** Filesystem. `[TBD]` = ungraded, `[score]` = graded. Version numbers increment in the loop (v1, v2, v3...); only the best passing version ships to stages/4_ready/.
 
 **Steps in execution.**
 
@@ -341,7 +341,7 @@ An AI agent workspace that automates job applications: pulls listings from a job
 
 **In one line.** LLM task 5 — verifies every resume claim against the base resume and LinkedIn.
 
-**What it does.** Reads the veracity protocol, customized resume, base resume, and full career history. Classifies every claim into one of 4 buckets. If all claims verified → replies VERIFIED. If not → replies UNVERIFIED with specific claims to fix. Mandatory before moving to stages/4_ready/.
+**What it does.** Reads the veracity protocol, customized resume, base resume, and full career history. Classifies every claim into one of 4 buckets. If all claims verified → replies VERIFIED. If not → replies UNVERIFIED with specific claims to fix. Runs twice per version lifecycle (ADR-0018): inside the customize loop on every version grading ≥ 9 (a failed review forces a repair revision while budget remains), and once more after the loop as the final gate on the selected version — with fallback to the next-best passing candidate if it fails.
 
 **How it's built.** grader-model via `devin -p` (automated) or `util/agent-profiles/truthfulness-reviewer.md` (debug). Protocol: `_config/veracity-protocol.md`. Writes JSON to `.veracity/<slug>/verification.json`.
 
@@ -379,9 +379,9 @@ An AI agent workspace that automates job applications: pulls listings from a job
 
 **In one line.** Passing resumes awaiting manual application.
 
-**What it does.** A resume moves here only if grade ≥ 9 AND truthfulness verified. The entire folder (JD + resume) is moved from stages/2_drafts/ to stages/4_ready/. The user reviews and submits manually.
+**What it does.** A resume moves here only if grade ≥ 9 AND it passed the final truthfulness gate after the customize loop. The entire folder (JD + the winning resume only — non-selected versions are pruned) is moved from stages/2_drafts/ to stages/4_ready/. The user reviews and submits manually.
 
-**How it's built.** Filesystem: `stages/4_stages/4_ready/ready/<lt;company-role>/`. Moved by `step10_ready_node()` in `pipeline/steps/step10_finalize.py`.
+**How it's built.** Filesystem: `stages/4_ready/<company-role>/`. Moved by `step11_ready_node()` in `pipeline/steps/step11_finalize.py`.
 
 **Steps in execution.**
 
@@ -476,6 +476,7 @@ Payload shapes are what the design implies, not measured traffic.
 | 6 | CU → CL | measure | `{"cmd":"python3 -m pipeline.helpers.count_lines --json"}` |
 | 7 | CL → CU | line count | `{"total":72,"ceiling":75}` |
 | 8 | CU → DR | rewrite (trimmed) | `{"file":"[TBD] resume-v1.md","lines":70}` |
+| 9 | CU → OR | YES/NO outcome | `{"signal":"could this be truthfully improved further?"}` |
 
 ### Resume grading
 

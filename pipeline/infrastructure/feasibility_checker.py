@@ -6,7 +6,7 @@ Ported from job-scraper's scrape_jobs.py. Uses the pipeline's LLM protocol
 it audit logging, permission mode control, workspace isolation, and
 testability via dependency injection.
 
-The feasibility prompt is candidate-specific and lives in config.json
+The feasibility prompt is candidate-specific and lives in pipeline-config.json
 (→ feasibility_prompt field). The scraper keeps its own copy of this class
 for upstream sync, but job-hunter's pipeline uses this one.
 
@@ -20,6 +20,8 @@ import abc
 import json
 
 from pydantic import BaseModel, ValidationError, field_validator
+
+from pipeline.infrastructure.config import DEFAULT_LLM_MODEL
 
 
 class FeasibilityResult(BaseModel):
@@ -70,8 +72,9 @@ class DevinCLIChecker(FeasibilityChecker):
 
     BATCH_SIZE = 10
 
-    def __init__(self, llm, model: str = "customizer-model", prompt: str = "",
-                 timeout: int = 60, workspace: str = "."):
+    def __init__(self, llm, model: str = DEFAULT_LLM_MODEL, prompt: str = "",
+                 timeout: int = 60, workspace: str = ".",
+                 retries: int = 1, retry_delay: int = 5):
         """Args:
             llm: LLM callable (RealLLM or FakeLLM) following the pipeline
                  LLM protocol — __call__(prompt, *, model, timeout, workspace,
@@ -80,18 +83,22 @@ class DevinCLIChecker(FeasibilityChecker):
             prompt: Feasibility prompt (candidate-specific, from config).
             timeout: Per-call timeout in seconds.
             workspace: Working directory for the LLM session.
+            retries: Number of retries on LLM failure.
+            retry_delay: Delay between retries in seconds.
         """
         self.llm = llm
         self.model = model
         self.prompt = prompt
         self.timeout = timeout
         self.workspace = workspace
+        self.retries = retries
+        self.retry_delay = retry_delay
 
     def check_batch(self, jobs: list[dict]) -> dict[str, tuple[str, str]]:
         if not jobs:
             return {}
         if not self.prompt:
-            print("  ⚠️  No feasibility prompt configured in config.json.")
+            print("  ⚠️  No feasibility prompt configured in pipeline-config.json.")
             print("      Add a 'feasibility_prompt' field describing what makes a job relevant.")
             return {}
         lines = [
@@ -113,8 +120,10 @@ class DevinCLIChecker(FeasibilityChecker):
         prompt = "\n".join(lines)
         output, error = self.llm(
             prompt, model=self.model, timeout=self.timeout,
-            workspace=self.workspace, retries=1,
+            workspace=self.workspace, retries=self.retries,
+            retry_delay=self.retry_delay,
             permission_mode="normal",
+            step="feasibility",
         )
         if error:
             print(f"  ⚠️  Feasibility batch failed: {error}")

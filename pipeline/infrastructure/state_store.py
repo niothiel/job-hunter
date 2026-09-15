@@ -21,14 +21,14 @@ Usage:
 from __future__ import annotations
 
 import json
-import logging
 import os
 import sqlite3
+import structlog
 from datetime import datetime, timezone
 from enum import Enum
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class JobStatus(str, Enum):
@@ -46,6 +46,9 @@ class JobStatus(str, Enum):
     REJECTED_JOB_FIT = "rejected_job_fit"
     REJECTED_RESUME = "rejected_resume"
     TRASH = "trash"
+    # Held in place (folder doesn't move) for human review — e.g. all
+    # resume versions failed truthfulness (ADR-0018).
+    HUMAN_REVIEW = "human_review"
 
 
 _STATE_TRANSITIONS_SCHEMA = """

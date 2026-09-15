@@ -1,0 +1,8 @@
+# Optional observability dependencies (ADR-0014).
+# Install only if you want LLM tracing via Arize Phoenix:
+#   pip install -r requirements-observability.txt
+# The pipeline runs fine without these — tracing is a no-op when
+# arize-phoenix is not importable or PHOENIX_HOST is unset.
+
+arize-phoenix>=4.0,<5              # local observability UI (ELv2 server, Apache 2.0 client)
+openinference-instrumentation-langchain>=0.1,<1  # auto-instrument LangGraph nodes + LLM calls

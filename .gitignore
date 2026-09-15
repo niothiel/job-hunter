@@ -55,3 +55,6 @@ scoring_profile.json
 
 # Devin session state (runtime)
 .devin/session-state/
+
+# Local-only agent instructions (never commit — contains private mirror info)
+agents.local.md
