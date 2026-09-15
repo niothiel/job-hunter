@@ -5,30 +5,31 @@
 
 ## What to Emphasize
 
-I specialize in creating high performance teams (and improving underperforming teams) and operating at massive, internet-scale. I am trying to get a job at the Director level or higher in Big Tech companies (e.g. Google, Anthropic, Stripe, etc), so tailor the applications to those.
+I am a hands-on Distinguished Software Engineer targeting Staff, Principal, Distinguished, and equivalent senior individual-contributor roles at strong product, platform, security, and AI companies. Tailor applications toward backend, platform, AppSec/SCA, cloud infrastructure, distributed systems, developer tooling, workflow automation, and agentic AI work.
 
 When a JD emphasizes a specific theme, draw from the relevant part of my background:
-- **Scale/throughput:** Lead with Oracle (30B API calls/day, 1M transactions/sec) and RedShelf (20M API calls/day, 8M users)
-- **Team building/org design:** Lead with RedShelf (20% output with 25% fewer people) and Oracle (scaled to 50-person org, 4 departures in 4 years)
-- **AI/agentic modernization:** Lead with RedShelf (AI-enabled SDLC, Claude/Codex/Cursor, NotebookLM)
-- **Governance/metrics:** Lead with RedShelf (DORA/SPACE, CodeClimate, engineering governance framework)
-- **Compliance/security:** Lead with Oracle (SOC2, GDPR, CCPA, zero-data-retention, threat mitigation)
-- **Cloud migration/infra:** Lead with Oracle (SoftLayer → OCI migration) and RedShelf (cost-to-serve reduction)
-- **Entrepreneurship/ownership:** Lead with Ungambled (bootstrapped, seed round, GTM, CAC optimization)
+- **AppSec/SCA:** Lead with Heeler's multi-ecosystem remediation engine, CycloneDX graph traversal, minimum-safe-upgrade calculation, and vulnerability remediation
+- **AI/agentic systems:** Lead with Heeler's LangGraph and AWS Bedrock Fix Now feature, repository-scoped agent memory, package-manager proxy, execution tracking, and concurrency controls
+- **Backend/platform systems:** Lead with asynchronous workflow workers, Redis-backed checkpointing, PostgreSQL and SQLAlchemy, multi-tenant performance work, and Python or Go services
+- **Reliability/scale:** Lead with scheduler deadlock and double-enqueue fixes, large-tenant query optimization, DivvyCloud's 10M+ IAM rows per day, and Capital One products receiving 100,000+ calls per day
+- **Cloud/DevOps:** Lead with the DivvyCloud auto-scaling control plane, AWS and Terraform experience, ECS Fargate and RDS, and Capital One's blue-green deployment automation
+- **Technical leadership:** Lead with ownership of major products and migrations, strict typing across the Python backend, onboarding an eight-engineer team, and the onboarding system used by 30+ engineers
 
 ## What to Downplay or Omit
 
-Downplay direct software engineering skills — as a senior level manager, those are no longer directly relevant to my day to day responsibilities. Specifically:
-- Remove or condense specific technologies from the Skills table if they're IC-level tools (e.g. C#, .NET, JavaScript frameworks)
-- Keep the Early Career Highlights section but don't expand it — it's there to show progression, not to be the focus. Exception: if the JD demands a specific skill/technology that only appears in an early role (per the full LinkedIn experience), surface that detail in the existing early-career bullet rather than adding new roles. Don't bloat the section beyond what the JD justifies.
-- Don't add IC-level technical skills to the Skills table even if the JD asks for them — the Skills table should reflect leadership/strategy capabilities
+Keep the résumé centered on senior individual-contributor impact. Specifically:
+- Downplay mobile, desktop, and early-career web work unless the JD explicitly values it
+- Condense roles before 2019 when space is needed; retain enough detail to show progression and relevant technical breadth
+- Do not imply formal people-management responsibility. Team onboarding and technical leadership are supported; engineering-management scope is not
+- Do not overstate AI/ML experience beyond the agentic remediation work explicitly documented at Heeler
+- Omit technologies that are not relevant to the JD rather than expanding the technology section indiscriminately
 
 ## Formatting Preferences
 
-- **Section order:** Preserve exactly — Experience → Early Career Highlights → Personal Projects → Skills → Education. Don't add, remove, or reorder top-level sections.
-- **No summary/objective at the top.** The base resume doesn't have one. Don't add one.
-- **Bullet style:** No periods at the end of bullets. Match the base resume exactly.
-- **Skills table:** Keep the two-column table format. Don't convert to a flat list.
+- **Section order:** Preserve exactly — Summary → Technology → Experience → Education. Don't add, remove, or reorder top-level sections.
+- **Summary:** Keep it concise and tailor its emphasis to the JD without adding unsupported claims.
+- **Bullet style:** No periods at the end of bullets. Match the base résumé exactly.
+- **Technology:** Keep the flat technology list. Prioritize relevant documented technologies without inventing proficiency.
 - **Font/spacing:** Not relevant — resumes are markdown only, graded and reviewed via text. No PDF generation step in the current pipeline.
 
 ### Length & Bullet Optimization Rules
@@ -54,12 +55,12 @@ Match the tone in the generic resume exactly - not too many buzzwords, minimal c
 
 ## Source Material — The Reference Pool
 
-Three documents form the reference pool the customizer draws from to optimally match the JD. The customizer's job is to select and rephrase the strongest truthful material from this pool — rephrasing, condensing, reordering, and pulling in material as needed, as long as every claim is truthful (appears in the base resume or LinkedIn).
+The configured documents form the reference pool the customizer draws from to match the JD. Select and rephrase the strongest truthful material from this pool. Every claim must appear in the base résumé or full-experience source.
 
-- **Base resume** (`profile/base-resume/base-resume.md`) — the customization BASE. Every tailored resume starts from a fresh copy of this template. Preserve its structure, formatting, section order, and existing bullets as the starting point.
-- **Full experience** (`profile/full-experience/full-experience.md`) — the SOURCING reference. Consult for material not on the base resume (new bullets, skills, technologies, earlier roles). Anything pulled in must appear verifiably in LinkedIn.
-- **Few-shot examples** (`examples/customized-resumes/`) — hand-customized resumes that demonstrate the desired transformation patterns. Study these before customizing.
-- **Never build a customized resume directly from the LinkedIn experience.** The output is always: base resume + pulled-in material, formatted to match the base. LinkedIn is a source, not a template.
+- **Base resume** (`_config/profile/base-resume/base-resume.md`) — the customization BASE. Every tailored résumé starts from a fresh copy of this template. Preserve its structure, formatting, section order, and existing bullets as the starting point.
+- **Full experience** (`_config/profile/full-experience/full-experience.md`) — the SOURCING reference. Consult it for material not on the base résumé, including additional bullets, skills, technologies, and earlier-role detail.
+- **Few-shot examples** (`docs/examples/customized-resumes/`) — the three configured Val-specific examples demonstrate AppSec, backend/platform, and cloud-infrastructure emphasis. Use them for transformation patterns, never as independent factual authority.
+- **Never build a customized résumé directly from full experience.** The output is always the base résumé plus selected sourced material, formatted to match the base. Full experience is a source, not a template.
 
 ## Customization Strategy
 
@@ -67,28 +68,28 @@ When customizing the resume for a specific JD, the agent may:
 - **Preserve chronological job order.** Never reorder employers or roles — keep them in the exact order they appear in the base resume. Within a role, preserve the existing bullet order by default. Reorder bullets only when it creates a material improvement in JD alignment, and never move a bullet above the bullets that describe the role's fundamental scope, ownership, or core responsibilities.
 - **Rewrite bullet wording** to mirror the JD's language (e.g. if the JD says "platform reliability," adjust a bullet that says "availability" to use "reliability" — but only if the meaning is identical)
 - **De-emphasize or shorten bullets** that are irrelevant to the JD to stay within the 75 rendered line ceiling (see Length & Bullet Optimization Rules above)
-- **Swap or modify items in the Skills table** to prioritize the capabilities the JD emphasizes, so long as it is clear that I actually have those skills based on my work experience
-- **Condense the Early Career section** if space is needed for more relevant content above
-- **Pull new bullets, skills, technologies, or earlier-role experience from the full LinkedIn experience** onto the base resume when the JD demands something not on the base — but only material that appears verifiably in LinkedIn. Format pulled material to match the base resume's style (no periods, same bullet structure).
+- **Reorder or trim the Technology list** to prioritize documented capabilities emphasized by the JD
+- **Condense roles before 2019** if space is needed for more relevant recent content
+- **Pull new bullets, skills, technologies, or earlier-role experience from full experience** onto the base résumé when the JD demands something not on the base, but only when that material is stated explicitly in the source. Format pulled material to match the base résumé's style.
 
 The agent may NOT:
-- Add new bullets, skills, technologies, or experience that appear nowhere in the base resume AND nowhere in the full LinkedIn experience. When in doubt, omit.
-- Fabricate or infer experience from adjacent work — every added claim must be directly stated in the base resume or LinkedIn, not inferred.
-- Add a summary, objective, or cover letter section
+- Add new bullets, skills, technologies, or experience that appear nowhere in the base résumé and nowhere in full experience. When in doubt, omit.
+- Fabricate or infer experience from adjacent work — every added claim must be directly stated in the base résumé or full experience, not inferred
+- Add an objective or cover-letter section, or remove a required top-level section
 - Change company names, job titles, or employment dates
 
 ## Handling Gaps
 
 When the JD asks for something not on the base resume:
-- **In the full LinkedIn experience:** Pull the relevant experience from LinkedIn onto the base resume (e.g. JD asks for React/Node — Lanetix has React/Redux/Node/Express in the full experience; pull that onto the base, formatted to match).
-- **Adjacent experience exists (in base or LinkedIn):** Highlight the adjacent experience (e.g. JD asks for Kubernetes, I have OCI migration and Docker-adjacent work — emphasize the cloud migration experience)
+- **In full experience:** Pull the relevant material onto the base résumé and format it to match.
+- **Adjacent experience exists:** Highlight the documented adjacent experience without relabeling it as the requested skill.
 - **No relevant experience (in either doc):** Omit. Don't fabricate. Let the grade reflect the gap honestly.
 - **Partial experience:** Emphasize the relevant portion of what I have without overstating it. Don't reword to imply deeper expertise than I have.
 
 ## Grading Criteria
 
 ### JD Grade (Step 2) — how well does this job fit my background?
-- **9-10:** My experience directly maps to the role's core requirements at similar scale. The role is Director+ at a company where my background is a clear fit. I'd be a top candidate.
+- **9-10:** My experience directly maps to the role's core requirements at an appropriate senior IC level and scale. The company and technical scope are a clear fit.
 - **7-8:** Strong overlap on most requirements. A few gaps but nothing critical. Worth customizing a resume.
 - **5-6:** Some overlap but significant gaps or the role is too junior/senior. Marginal.
 - **Below 5:** Poor fit. Don't bother.
@@ -110,27 +111,15 @@ When the JD asks for something not on the base resume:
 3. **Ensure the formatting matches throughout.** For instance, don't add periods where there weren't any before, make sure the tabs and spacing match throughout, etc.
 4. **Never invent or inflate metrics.** If a bullet says "20% improvement," don't change it to "30%" to better match the JD. The numbers are real.
 5. **Never invent job titles, company names, or employment dates.** These are immutable facts.
-6. **Never add skills, technologies, or experiences that appear nowhere in the base resume AND nowhere in the full LinkedIn experience.** Every added claim must be directly stated in the base resume or LinkedIn, not inferred from adjacent work. When in doubt, omit. If the JD asks for something I don't have in either doc, see "Handling Gaps" above.
+6. **Never add skills, technologies, or experiences that appear nowhere in the base résumé AND nowhere in full experience.** Every added claim must be directly stated in one of those sources, not inferred from adjacent work. When in doubt, omit. If the JD asks for something absent from both, see "Handling Gaps" above.
 7. **Don't change terms arbitrarily unless they have the same meaning.** For instance, don't replace "monolith" with "distributed" — those are not interchangeable. Only swap terms when the meaning is identical.
 
 ## Few-Shot Examples
 
-Four hand-customized resumes are provided as quality examples in `examples/customized-resumes/`. Study these before customizing to learn the desired transformation patterns:
+Three Val-specific few-shot résumés are configured:
 
-1. **Salesforce VP Engineering Delivery & Excellence** — Gold standard for surgical rewording. Demonstrates clean JD language mirroring for a VP delivery/excellence role without over-transformation. (69 rendered lines, 34 bullets)
-2. **IonQ Software Engineering Director, Cloud Services** — Demonstrates section-adding (Personal Projects from LinkedIn), condensing (Ungambled 6→2 bullets), and LinkedIn-pulling (incident response, architecture reviews). (75 rendered lines, 36 bullets)
-3. **Core & Ads Serving Platform Director** — Demonstrates domain-specific tailoring for AdTech with architectural language, and LinkedIn-pulling from early career (Lanetix experiment). (72 rendered lines, 35 bullets)
-4. **LaunchDarkly ED, Core** — Demonstrates domain-specific tailoring for platform engineering / feature flagging, and LinkedIn-pulling from early career (Lanetix experiment). (71 rendered lines, 35 bullets)
+1. **Principal Application Security Engineer** — AppSec/SCA, autonomous remediation, IAM, and attack-path analysis
+2. **Staff Backend Platform Engineer** — Python and Go services, workflow processing, data scale, reliability, and strict typing
+3. **Staff Cloud Infrastructure Engineer** — AWS, Terraform, auto-scaling control planes, CI/CD, and deployment automation
 
-What to learn from these examples:
-- Rewording bullets to mirror JD language while preserving meaning
-- When to pull from LinkedIn vs. when to reword existing bullets
-- When to condense vs. when to expand
-- How to reorganize the Skills table for JD alignment
-- Format fidelity to the base resume (no summaries, no JD contamination, no periods, correct section order)
-
-What NOT to do (anti-patterns from rejected examples):
-- Do not copy JD text into the resume body
-- Do not add summary/objective sections
-- Do not add "proprietary" or "consulting-speak" phrasing
-- Do not duplicate bullets within a role
+Use them to learn surgical rewording, source selection, compression, and format fidelity. Never copy JD text into the résumé, treat the target headline as an employment title, introduce unsupported consulting language, or duplicate bullets within a role.

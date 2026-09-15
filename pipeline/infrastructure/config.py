@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +25,7 @@ class PipelineConfig(BaseModel):
     """Pipeline configuration, merged from defaults + config.json."""
 
     models: ModelConfig = ModelConfig()
+    llm_provider: Literal["devin", "codex", "claude"] = "devin"
     candidate_name: str = "Squall Leonhart"
     scraper_repo_path: str = ""
     scraper_transport: str = "filesystem"  # "filesystem" or "http"

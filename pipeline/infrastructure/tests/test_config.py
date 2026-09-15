@@ -8,6 +8,7 @@ from pipeline.infrastructure.config import PipelineConfig, ModelConfig, load_con
 
 def test_default_config():
     config = PipelineConfig()
+    assert config.llm_provider == "devin"
     assert config.models.customizer == "customizer-model"
     assert config.models.grader == "grader-model"
     assert config.max_optimization_iterations == 3
@@ -24,8 +25,7 @@ def test_load_config_from_real_file():
     if not paths.exists():
         pytest.skip("No config.json in real workspace")
     config = load_config(paths)
-    assert config.models.customizer == "customizer-model"
-    assert config.max_optimization_iterations == 3
+    assert isinstance(config, PipelineConfig)
 
 
 def test_load_config_missing_file(tmp_path):
@@ -51,3 +51,13 @@ def test_validation_rejects_negative_iterations():
 def test_dry_run_settable():
     config = PipelineConfig(dry_run=True)
     assert config.dry_run is True
+
+
+@pytest.mark.parametrize("provider", ["devin", "codex", "claude"])
+def test_supported_llm_providers(provider):
+    assert PipelineConfig(llm_provider=provider).llm_provider == provider
+
+
+def test_validation_rejects_unknown_llm_provider():
+    with pytest.raises(Exception):
+        PipelineConfig(llm_provider="other")

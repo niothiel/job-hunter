@@ -26,15 +26,7 @@ import tempfile
 import time
 from pathlib import Path
 
-
-class LLMError(Exception):
-    """Raised when a devin -p call fails (timeout, non-zero exit, empty output)."""
-
-    def __init__(self, message, *, stdout="", stderr="", returncode=None):
-        super().__init__(message)
-        self.stdout = stdout
-        self.stderr = stderr
-        self.returncode = returncode
+from pipeline.infrastructure.llm_error import LLMError
 
 
 def _find_devin():

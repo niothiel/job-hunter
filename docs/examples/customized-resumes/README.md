@@ -1,17 +1,16 @@
 # Customized Resume Examples
 
-These four example resumes demonstrate how the same base resume (`profile/base-resume/base-resume.md`) gets customized for different roles, drawing different experience bullets from the full career history (`profile/full-experience/full-experience.md`).
+These three example résumés demonstrate how the same base résumé (`_config/profile/base-resume/base-resume.md`) gets customized for different roles, drawing different experience bullets from the full career history (`_config/profile/full-experience/full-experience.md`).
 
-## Why These Four?
+## Why These Three?
 
 Each example targets a **different seniority level and emphasis**, covering the most common customization angles for a senior engineering leader:
 
 | Example | Target Role | What It Demonstrates |
 |---------|------------|---------------------|
-| Acme Corp Director of Engineering | Director | Cloud infrastructure + compliance focus. Pulls in SOC2/GDPR, multi-region failover, FinOps bullets from full experience that aren't on the base resume. |
-| TechFlow Senior Engineering Manager | Senior EM | Developer platform + productivity focus. Emphasizes CI/CD, developer portal, DORA/SPACE metrics, AI-enabled SDLC. Shows how a Director-level candidate down-levels for an EM role. |
-| Globex VP of Engineering | VP | Org scaling + culture focus. Highlights hiring metrics (92% offer acceptance), mentorship, tech talks, conference speaking. Shows how the same experience frames upward for executive roles. |
-| Initech Staff Engineering Manager | Staff EM | Distributed systems + deep technical focus. Pulls in RPC framework, event streaming, capacity planning, data pipeline bullets. Shows technical depth for hands-on leadership roles. |
+| Principal Application Security Engineer | Principal IC | AppSec/SCA, autonomous remediation, IAM, and attack-path analysis |
+| Staff Backend Platform Engineer | Staff IC | Python and Go services, workflow processing, data scale, reliability, and strict typing |
+| Staff Cloud Infrastructure Engineer | Staff IC | AWS, Terraform, auto-scaling control planes, CI/CD, and deployment automation |
 
 ## How to Use
 

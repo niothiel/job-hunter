@@ -4,7 +4,7 @@ The LLM is the only effect boundary we abstract (ADR-0005). Filesystem
 operations stay direct, gated by config.dry_run. This lets tests swap in
 FakeLLM without subprocess fakes or network calls.
 
-Production: RealLLM wraps devin_cli.call_llm_safe.
+Production: RealLLM dispatches to the configured CLI provider.
 Tests:      FakeLLM returns canned responses keyed by prompt substring.
 
 Injection: LangGraph's native DI via config["configurable"]. Nodes access
@@ -16,6 +16,7 @@ through by callers; until Stream 1a lands, some callers may use None.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import re
@@ -90,10 +91,10 @@ class LLM(Protocol):
 
 
 class RealLLM:
-    """Wraps devin_cli.call_llm_safe — the only production impl.
+    """Dispatches production calls to a supported CLI provider.
 
-    Delegates to the existing devin -p subprocess wrapper. The error type
-    is normalized to str (call_llm_safe returns LLMError, we stringify it)
+    Provider errors are normalized to strings (the adapters return LLMError,
+    which we stringify)
     so the protocol signature stays simple.
 
     Every call is logged to the llm_calls audit table (W7) with full prompt,
@@ -101,13 +102,26 @@ class RealLLM:
     context for later querying.
     """
 
-    def __init__(self, db_path: str | None = None):
+    _PROVIDER_MODULES = {
+        "devin": "pipeline.infrastructure.devin_cli",
+        "codex": "pipeline.infrastructure.codex_cli",
+        "claude": "pipeline.infrastructure.claude_cli",
+    }
+
+    def __init__(self, db_path: str | None = None, provider: str = "devin"):
         """Args:
-            db_path: Path to the audit DB. If None, RealLLM logs a warning
-                     and skips audit logging (useful for tests that don't
-                     need the audit trail). Defaults to None.
+            db_path: Path to the audit DB. If None, RealLLM skips audit
+                     logging (useful for tests that don't need the audit
+                     trail). Defaults to None.
+            provider: CLI provider name: devin, codex, or claude.
         """
+        if provider not in self._PROVIDER_MODULES:
+            supported = ", ".join(sorted(self._PROVIDER_MODULES))
+            raise ValueError(
+                f"Unsupported LLM provider '{provider}'. Supported: {supported}"
+            )
         self._db_path = db_path
+        self.provider = provider
 
     def __call__(
         self, prompt: str, *, model: str, timeout: int, workspace: str,
@@ -118,9 +132,11 @@ class RealLLM:
         job_slug: str | None = None,
         step: str | None = None,
     ) -> tuple[str | None, str | None]:
-        # Import here so the pipeline package doesn't hard-depend on devin_cli
-        # at import time — tests using FakeLLM don't need devin installed.
-        from pipeline.infrastructure.devin_cli import call_llm_safe
+        # Import lazily so tests using FakeLLM do not need any CLI installed.
+        provider_module = importlib.import_module(
+            self._PROVIDER_MODULES[self.provider]
+        )
+        call_llm_safe = provider_module.call_llm_safe
 
         start = time.monotonic()
         output, error = call_llm_safe(
@@ -136,7 +152,7 @@ class RealLLM:
         self._log_call(
             job_slug=job_slug, step=step, model=model, prompt=prompt,
             response=output, error=error,
-            params={"timeout": timeout, "retries": retries,
+            params={"provider": self.provider, "timeout": timeout, "retries": retries,
                     "retry_delay": retry_delay, "permission_mode": permission_mode},
             duration_ms=duration_ms,
         )

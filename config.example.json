@@ -3,6 +3,8 @@
 
   "candidate_name": "Squall Leonhart",
 
+  "llm_provider": "devin",
+
   "models": {
     "customizer": "customizer-model",
     "grader": "grader-model",

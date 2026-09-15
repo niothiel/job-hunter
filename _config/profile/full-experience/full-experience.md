@@ -1,90 +1,77 @@
-# Squall Leonhart — Full Career History
+# Val Komarov — Full Career History
 
-> Sourcing reference (LinkedIn-style superset). Every claim on a customized resume
-> must be traceable to this document or the base resume. Never used as a
-> customization base directly.
+> Sourcing reference transcribed from the Google Docs super-résumé, “VAL KOMAROV RESUME 2026-09-15.” Every customized résumé claim must be traceable to this document or the base résumé. Never use this document as the customization base directly.
 
 ## Contact
-squall.leonhart@example.com | (555) 014-8842 | San Francisco, CA | github.com/sleonhart
+Fairfax, VA | (571) 338-2310 | niothiel@gmail.com | linkedin.com/in/val-komarov
+
+## Summary
+Passionate and highly motivated software engineer dedicated to continuous learning and seeking opportunities to work with inspiring professionals.
+
+## Technology
+Python, MySQL, PostgreSQL, Redis, AWS, Docker, Terraform, SQLAlchemy, Bash, Git, FastAPI, Linux (Ubuntu, Debian, Alpine), Go, JavaScript, Jenkins, GitHub Actions, GraphQL
 
 ## Experience
 
-### Esthar Cloud Systems — Director of Engineering (Jan 2020 – Present)
-* Lead 40-person engineering organization across platform infrastructure, reliability, and developer experience teams
-* Support 12B API calls/day across multi-region cloud infrastructure with 99.99% availability for tier-1 services
-* Drove cloud cost optimization program reducing annual infrastructure spend by 28% ($4.2M savings) across multi-region deployments
-* Built engineering governance framework spanning DORA metrics, incident review processes, and architecture review standards
-* Scaled organization from 18 to 42 engineers across 6 teams with 92% offer acceptance rate and only 3 departures in 4 years
-* Launched multi-region active-active failover architecture eliminating single-region dependency for tier-1 services
-* Partnered with product leadership to define 3-year roadmap for platform services serving 500+ internal developers
-* Led SOC2 Type II and GDPR compliance initiatives across platform infrastructure including zero-data-retention architecture
-* Introduced SPACE framework adoption alongside DORA for holistic developer productivity measurement
-* Established architecture review board governing service ownership, API contracts, and technology selection
-* Drove migration from SoftLayer infrastructure to multi-cloud AWS/GCP architecture reducing vendor lock-in risk
-* Sponsored internal tech talk program and engineering blog; 12 talks published, 3 external conference submissions
+### Heeler — Distinguished Software Engineer (October 2024 – Present) · Remote
+Full-stack product engineer building an AppSec/SCA platform spanning autonomous AI remediation, vulnerability analysis, workflow automation, and multi-tenant platform infrastructure.
 
-### Balamb Garden Technologies — Senior Engineering Manager (Mar 2016 – Dec 2019)
-* Managed 24-engineer platform team building internal developer platform, CI/CD tooling, and service catalog
-* Improved deployment frequency 4x (daily to hourly) while reducing change failure rate from 18% to 5% via progressive delivery
-* Led migration from monolith to service-oriented architecture across 30+ services with zero customer-facing outages
-* Introduced engineering excellence program spanning code review standards, testing culture, and on-call rotation redesign
-* Grew team from 12 to 24 engineers; promoted 6 engineers to senior or staff level over tenure
-* Built self-service deployment platform reducing median lead time for changes from 3 days to 4 hours
-* Adopted AI-enabled SDLC practices including Copilot integration and automated code review tooling
-* Launched internal developer portal unifying service documentation, ownership, and on-call schedules
-* Reduced platform cost-to-serve by 35% through resource right-sizing and spot instance adoption
-* Mentored 2 engineers who became engineering managers at peer companies
+* Built the core multi-ecosystem SCA remediation calculation engine for npm, PyPI, Maven, Go, NuGet, and Ruby, including version-constraint parsing, minimum-safe-upgrade calculation, transitive dependency solutions, and CycloneDX dependency-graph traversal
+* Designed and shipped an end-to-end AI-agent-driven “Fix Now” feature, orchestrating autonomous vulnerability remediation with LangGraph and AWS Bedrock, audit persistence, concurrency controls, and live execution tracking
+* Designed a transparent package-manager proxy and repository-scoped agent memory system, allowing sandboxed remediation agents to safely resolve dependencies and retain context between runs
+* Designed and led the migration of workflow automation from synchronous request execution to asynchronous workers with rate limiting, automatic abuse shutdown and notification, and execution observability
+* Improved production reliability and scale by fixing scheduler deadlocks and double-enqueue bugs, redesigning Redis-backed LangGraph checkpointing, and adding caching and query optimizations for large tenants
+* Drove a multi-month initiative to bring the Python backend under `mypy --strict` and enforce strict type checking in CI across workers, database, API, workflow, and remediation code
 
-### Timber Networks — Engineering Manager (Jul 2013 – Feb 2016)
-* Led 12-engineer team building distributed networking and messaging infrastructure
-* Designed and shipped high-throughput event streaming platform handling 2M events/sec at peak
-* Reduced p99 latency by 40% through systematic bottleneck analysis and protocol optimization
-* Established incident response process reducing mean time to resolution from 90 to 25 minutes
-* Built custom RPC framework supporting 10K concurrent connections with circuit breaker and retry semantics
-* Led capacity planning and load testing program validating infrastructure for 5x traffic growth
-* Owned vendor evaluation and selection for managed Kafka and service mesh adoption
+Technologies: Python, Go, FastAPI, PostgreSQL, SQLAlchemy, Redis, AWS Bedrock, LangGraph, React, TypeScript, Docker, AWS ECS Fargate, AWS RDS, Terraform
 
-### Dollet Data Labs — Senior Software Engineer (Aug 2010 – Jun 2013)
-* Built distributed data pipeline processing 8TB/day across multi-tenant analytics platform
-* Owned service ownership model adoption across 15 teams, improving operational accountability
-* Designed schema-agnostic ETL framework reducing new data source onboarding from 2 weeks to 2 days
-* Implemented data quality monitoring catching 99.5% of pipeline anomalies before customer impact
-* Tech lead for 5-engineer team owning streaming ingestion and batch processing systems
+### DivvyCloud (Acquired by Rapid7) — Consulting Software Engineer (December 2019 – October 2024) · Arlington, VA
+Multi-disciplinary engineer proficient in problem-solving and adept at wearing multiple hats. Committed to resolving persistent challenges within the product.
 
-### Galbadia Logistics — Software Engineer (Jun 2008 – Jul 2010)
-* Built routing optimization services for fleet management platform serving 50K vehicles
-* Developed real-time GPS tracking ingestion pipeline using Java and PostgreSQL
-* Optimized route calculation algorithms reducing average delivery times by 12%
+* Spearheaded the implementation of an auto-scaling control plane, deploying product instances and reducing developer and QA workload by 10+ hours per week; accelerated QA time by 10x
+* Led the development of Attack Path Analysis, enabling companies to visualize network compromise routes taken by attackers
+* Led the development of the IAM subproduct, processing 10M+ rows daily for multiple Fortune 500 customers' IAM footprints
+* Pioneered development of the IAM Least-Privileged Access product, empowering customers to eliminate unused permissions from high-risk IAM users and roles
+* Facilitated the onboarding of an eight-engineer team and a manager in Belfast, ensuring a smooth transition and effective collaboration
+* Developed a comprehensive developer onboarding checklist, including instructional videos, now the go-to resource for onboarding 30+ engineers
+* Resolved long-standing issues in the product by diving deep and applying comprehensive fixes rather than band-aids, including database weak references and multiprocessing issues
 
-### Trabia Systems — Junior Software Engineer (Jul 2006 – May 2008)
-* Developed internal tooling and automation frameworks for QA and release engineering teams
-* Built build-system automation reducing release preparation time from 4 hours to 30 minutes
-* Wrote and maintained Python scripts for log analysis and infrastructure monitoring
+Technologies: Python, MySQL, Redis, Terraform, AWS, ECS Fargate, RDS, GCP, Azure
 
-## Additional Skills (beyond base resume)
-* Service mesh (Istio, Linkerd)
-* Observability (Prometheus, Grafana, OpenTelemetry)
-* Data engineering (Spark, Kafka Streams, Flink)
-* Languages: Python, Go, Java, Rust
-* Infrastructure as Code (Terraform, Pulumi)
-* Chaos engineering (Gremlin, Litmus)
-* FinOps and cloud cost management
-* Threat modeling and security architecture
-* API design (gRPC, REST, GraphQL)
-* Agile and SAFe delivery frameworks
+### Capital One — Lead DevOps Engineer (September 2018 – December 2019) · Tysons Corner, VA
 
-## Certifications
-* AWS Certified Solutions Architect – Professional (2019)
-* Certified Kubernetes Administrator (CKA) (2018)
-* Google Cloud Professional Cloud Architect (2021)
+* Led the DevOps team responsible for Capital One's suite of big-data management products
+* Developed and maintained CI/CD pipelines for products receiving 100,000+ calls per day
+* Developed a Python-based CLI deployment platform for fully automated blue-green deployments with automatic rollback, reducing deployment time from two days to 45 seconds
 
-## Speaking & Community
-* Speaker, "Scaling Platform Engineering at Internet Scale" — CloudNativeCon 2022
-* Speaker, "Building Engineering Governance That Developers Trust" — QCon San Francisco 2021
-* Panelist, "The Future of Developer Productivity" — DevOps Enterprise Summit 2023
-* Co-organizer, Bay Area Engineering Leaders meetup (2021 – Present)
-* Mentor, Techstars Cloud cohort (2022)
+Technologies: Python, Terraform, Ansible, Jenkins, Amazon ECS, Docker
+
+### Capital One — Software Developer / DevOps Engineer (April 2015 – September 2018) · Tysons Corner, VA
+
+* Worked on a system that let Capital One customers bring third-party bank financial details into a unified mobile and web experience using Plaid and Finicity
+* Developed backend code for storing and retrieving transaction data and implemented a reference web application for demonstrations and as a model for the mobile experience
+* Led development of a robust CI/CD pipeline that enabled one-click blue-green production deployments
+* Extended boto3 with a library for performing blue-green deployments
+* Built reusable Ansible modules for deploying common infrastructure components, including Spring Boot and Python Gunicorn applications
+* Built a MongoDB database migration utility inspired by Alembic
+* Built a CLI application for performing MongoDB failovers across multiple regions during regional downtime
+
+Technologies: Java 8, Spring Boot, Redis, MongoDB, Python, Ansible, Bash, Jenkins, AWS EC2
+
+### TASC Labs — Mobile and Full-Stack Software Developer (March 2014 – April 2015) · Chantilly, VA
+Worked as a mid-level software engineer on Android, iOS, web, and desktop projects within the government intelligence community.
+
+* Led development of TESSMobile, an Android and iOS time-entry application described as the de facto industry standard within the intelligence community, downloaded over 50,000 times with 2,000+ business licenses
+* Developed an Android and desktop software suite for the Defense Threat Reduction Agency that allowed forces abroad to access and search a specialized database; the source résumé reports at least 27 users
+* Modernized the company website at tasclabs.com, now defunct, using Gulp, Node.js, EJS, and Bootstrap, and automated its build and deployment
+* Spearheaded the lab’s migration from SVN to GitLab and drove adoption of a Git-based development workflow
+* Received two Spot awards and a Mobile Development Excellence award
+
+### Ntiva Inc. — Engineering Intern (May 2011 – January 2012) · Falls Church, VA
+
+* Worked under the CTO developing provisioning software for Windows and Linux
+
+Technologies: Windows PowerShell, Bash, HAProxy
 
 ## Education
-* BS Computer Science — Trabia University, 2006
-* Minor in Mathematics — Trabia University, 2006
+**Computer Science B.S., Minor in Mathematics** — Virginia Polytechnic Institute and State University, August 2013

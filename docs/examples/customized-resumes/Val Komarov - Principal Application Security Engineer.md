@@ -1,12 +1,12 @@
 # Val Komarov
-**Distinguished Software Engineer**
+**Principal Application Security Engineer**
 Fairfax, VA | (571) 338-2310 | niothiel@gmail.com | linkedin.com/in/val-komarov
 
 ## Summary
-Distinguished software engineer with 12+ years building security, cloud, automation, and data-intensive products. Deep experience in Python, Go, AWS, PostgreSQL, and Redis, with a track record of shipping complex platforms, improving production reliability, and leading high-impact technical initiatives.
+Distinguished software engineer building AppSec, software-composition analysis, and autonomous remediation products. Deep experience with vulnerability remediation, IAM analysis, Python, Go, AWS, PostgreSQL, and Redis.
 
 ## Technology
-Python, Go, FastAPI, PostgreSQL, MySQL, SQLAlchemy, Redis, AWS, AWS Bedrock, LangGraph, React, TypeScript, Docker, Terraform, Linux, Bash, Git, Jenkins, GitHub Actions, GraphQL
+Python, Go, FastAPI, PostgreSQL, SQLAlchemy, Redis, AWS Bedrock, LangGraph, CycloneDX, Docker, Terraform, AWS ECS Fargate, AWS RDS, GraphQL
 
 ## Experience
 
@@ -14,34 +14,28 @@ Python, Go, FastAPI, PostgreSQL, MySQL, SQLAlchemy, Redis, AWS, AWS Bedrock, Lan
 * Built the multi-ecosystem SCA remediation engine for npm, PyPI, Maven, Go, NuGet, and Ruby, including version-constraint parsing, minimum-safe-upgrade calculation, transitive dependency solutions, and CycloneDX graph traversal
 * Designed and shipped the AI-agent-driven Fix Now feature using LangGraph and AWS Bedrock, with audit persistence, concurrency controls, and live execution tracking
 * Designed a transparent package-manager proxy and repository-scoped memory system for sandboxed remediation agents
-* Led migration of workflow automation from synchronous requests to asynchronous workers with rate limiting, abuse shutdown and notification, and execution observability
-* Improved production reliability and scale by fixing scheduler deadlocks and double-enqueue bugs, redesigning Redis-backed LangGraph checkpointing, and optimizing large-tenant queries
+* Led migration of workflow automation to asynchronous workers with rate limiting, automated abuse shutdown and notification, and execution observability
+* Improved reliability by fixing scheduler deadlocks and double-enqueue bugs and redesigning Redis-backed LangGraph checkpointing
 * Drove adoption of `mypy --strict` and strict CI type checking across the Python backend
 
 ### DivvyCloud (Acquired by Rapid7) — Consulting Software Engineer (December 2019 – October 2024) · Arlington, VA
-* Spearheaded an auto-scaling control plane that reduced developer and QA workload by 10+ hours per week and cut QA time by 10x
 * Led development of Attack Path Analysis for visualizing network compromise routes
 * Led development of the IAM product, processing 10M+ rows daily for multiple Fortune 500 customers
 * Pioneered IAM Least-Privileged Access capabilities for eliminating unused permissions from high-risk users and roles
-* Onboarded an eight-engineer team and manager in Belfast and created the onboarding resource used by 30+ engineers
+* Spearheaded an auto-scaling control plane that reduced developer and QA workload by 10+ hours per week and cut QA time by 10x
 * Resolved long-standing database, multiprocessing, and production issues through comprehensive root-cause fixes
 
 ### Capital One — Lead DevOps Engineer (September 2018 – December 2019) · Tysons Corner, VA
 * Led the DevOps team responsible for Capital One's suite of big-data management products
-* Developed a Python CLI for automated blue-green deployments and rollback, reducing deployment time from two days to 45 seconds
 * Developed and maintained CI/CD pipelines for products receiving 100,000+ calls per day
 
 ### Capital One — Software Developer / DevOps Engineer (April 2015 – September 2018) · Tysons Corner, VA
 * Built backend services for aggregating third-party bank data into a unified mobile and web experience
-* Led development of a production CI/CD pipeline supporting one-click blue-green deployments
-* Built internal tooling for AWS deployments, reusable Ansible infrastructure modules, MongoDB migrations, and multi-region database failover
+* Built internal tooling for AWS deployments, MongoDB migrations, and multi-region database failover
 
 ### TASC Labs — Mobile and Full-Stack Software Developer (March 2014 – April 2015) · Chantilly, VA
-* Led development of TESSMobile for Android and iOS, downloaded over 50,000 times with 2,000+ business licenses
 * Developed Android and desktop software for the Defense Threat Reduction Agency
-* Modernized the company website and automated its build and deployment
 * Migrated the lab from SVN to GitLab and drove adoption of a Git-based development workflow
-* Received two Spot awards and a Mobile Development Excellence award
 
 ### Ntiva Inc. — Engineering Intern (May 2011 – January 2012) · Falls Church, VA
 * Developed Windows and Linux provisioning software under the CTO using PowerShell, Bash, and HAProxy

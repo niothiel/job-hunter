@@ -106,6 +106,12 @@ def parse_args() -> argparse.Namespace:
              "grade-resume, optimize, truthfulness, ready, trash, "
              "rejected_job_fit, rejected_resume, ingest",
     )
+    parser.add_argument(
+        "--llm-provider",
+        choices=("devin", "codex", "claude"),
+        default=None,
+        help="Override config.json llm_provider for this run",
+    )
     return parser.parse_args()
 
 
@@ -162,11 +168,13 @@ def main() -> None:
     if args.dry_run:
         config = config.model_copy(update={"dry_run": True})
 
-    llm = RealLLM()
+    provider = args.llm_provider or config.llm_provider
+    llm = RealLLM(provider=provider)
 
     logger.info("=" * 60)
     logger.info("Job Hunter Pipeline starting (LangGraph)")
     logger.info(f"Dry run: {config.dry_run}")
+    logger.info(f"LLM provider: {provider}")
     if args.job:
         logger.info(f"Single job: {args.job}")
     if args.step:
