@@ -92,7 +92,7 @@ The pipeline uses an `LLM` protocol (defined in `pipeline/infrastructure/llm_int
 | [Codex CLI](https://developers.openai.com/codex/cli) | `"codex"` | `codex exec` | Read-only sandbox for analysis; workspace-write sandbox for customization |
 | [Claude Code](https://code.claude.com/docs/en/cli-usage) | `"claude"` | `claude -p` | Exact read/edit/count-line allowlists in `dontAsk` mode |
 
-Install and authenticate the chosen CLI, set `llm_provider`, and set each entry under `models` to a model name that provider accepts. For Codex and Claude, use `"default"` to defer model selection to the CLI's own configuration:
+Install and authenticate the chosen CLI, set `llm_provider`, and set each entry under `models` to a model name that provider accepts. For any provider, use `"default"` to defer model selection to the CLI's own configuration:
 
 ```json
 {

@@ -45,14 +45,17 @@ class Paths:
     agent_permissions: Path
 
     @staticmethod
-    def from_hunter_dir(hunter_dir: Path) -> Paths:
-        """Construct Paths from a given hunter root directory."""
-        scraper_dir = Path(
-            os.environ.get(
-                "JOB_SCRAPER_DIR",
-                os.path.expanduser("/path/to/job-scraper"),
+    def from_hunter_dir(
+        hunter_dir: Path, *, scraper_dir: Path | None = None
+    ) -> Paths:
+        """Construct Paths from a hunter root and optional scraper root."""
+        if scraper_dir is None:
+            scraper_dir = Path(
+                os.environ.get(
+                    "JOB_SCRAPER_DIR",
+                    os.path.expanduser("/path/to/job-scraper"),
+                )
             )
-        )
         data_dir = hunter_dir / "data"
         devin_dir = hunter_dir / ".devin"
         stages = hunter_dir / "stages"
