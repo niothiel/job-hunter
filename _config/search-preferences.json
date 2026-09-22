@@ -1,0 +1,15 @@
+{
+  "employment_track": "individual_contributor",
+  "target_levels": ["senior", "staff", "senior staff", "principal", "distinguished", "member of technical staff"],
+  "preferred_levels": ["staff", "senior staff", "principal"],
+  "preferred_domains": ["application security", "software composition analysis", "developer security", "vulnerability remediation", "backend platforms", "developer tooling", "distributed systems", "workflow automation", "agentic AI"],
+  "allowed_work_arrangements": ["remote", "hybrid"],
+  "remote_requirement": "Role must explicitly permit working from Virginia.",
+  "hybrid_locations": ["Northern Virginia", "Washington, DC"],
+  "excluded_hybrid_locations": ["Maryland"],
+  "relocation": false,
+  "minimum_total_compensation_usd": 300000,
+  "unknown_compensation_policy": "keep_and_flag",
+  "clearance_policy": "exclude_required_clearance",
+  "optimization_priority": "mission_and_domain_fit"
+}

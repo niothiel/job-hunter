@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "kind": "google-docs-trusted-read-context",
+  "target": {
+    "documentId": "1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "title": "VAL KOMAROV RESUME 2026-09-15",
+    "revisionId": "ANLCKQnrHiKq66HP6NFJ1pc1sj_U5nvUFsRoLaDbKs__i_QCXe-R__Ca0lNKcl7VW8rbM0LYNO0WrZieME7IK9ZYaicNmevGvt6ALi1BdJg",
+    "documentUrl": "https://docs.google.com/document/d/1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "selectedTabId": null
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "derivedControlInventory": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "nativeElementCounts": {
+      "horizontalRule": 8
+    },
+    "tabsScanned": [
+      "t.0"
+    ],
+    "controls": [],
+    "nativeElements": [
+      {
+        "type": "horizontalRule",
+        "startIndex": 95,
+        "endIndex": 96,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[5]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 95,
+          "endIndex": 97,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 252,
+        "endIndex": 253,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[8]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 252,
+          "endIndex": 254,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 440,
+        "endIndex": 441,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[11]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 440,
+          "endIndex": 442,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 5413,
+        "endIndex": 5414,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[62]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 5413,
+          "endIndex": 5415,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 6023,
+        "endIndex": 6024,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[74]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 6023,
+          "endIndex": 6025,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 7189,
+        "endIndex": 7190,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[93]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 7189,
+          "endIndex": 7191,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 8294,
+        "endIndex": 8295,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[106]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 8294,
+          "endIndex": 8296,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      },
+      {
+        "type": "horizontalRule",
+        "startIndex": 8512,
+        "endIndex": 8513,
+        "tabId": "t.0",
+        "segmentId": null,
+        "container": {
+          "kind": "paragraph",
+          "path": "root.tabs[0].body.content[115]",
+          "tabId": "t.0",
+          "segmentId": null,
+          "startIndex": 8512,
+          "endIndex": 8514,
+          "namedStyleType": "NORMAL_TEXT",
+          "listId": null,
+          "nestingLevel": null,
+          "table": null
+        },
+        "properties": null
+      }
+    ]
+  },
+  "editGuidance": {
+    "advisoryOnly": true,
+    "requiresTargetedPreservation": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope.",
+    "warnings": []
+  }
+}

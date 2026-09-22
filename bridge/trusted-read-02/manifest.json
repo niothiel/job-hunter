@@ -1,0 +1,57 @@
+{
+  "bridgeVersion": "3.6",
+  "kind": "google-docs-trusted-read",
+  "status": "complete",
+  "outputDir": "/mnt/d/dev/job-hunter/bridge/trusted-read-02",
+  "target": {
+    "documentId": "1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "title": "VAL KOMAROV RESUME 2026-09-15",
+    "revisionId": "ANLCKQkSqMl6UqCSb9gssBzMrlMFJS2r_Fm-XxBkf2JwzfYpAMVWZpgOwvEthNZFKOH72Xw6IaBcVf2JC4zm2DSjh_wvQQAvdazVFNk3nAs",
+    "documentUrl": "https://docs.google.com/document/d/1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "selectedTabId": null
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "controlAwareness": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "affectedParagraphCount": 0,
+    "nativeElementCounts": {},
+    "preservationRequired": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope."
+  },
+  "warnings": [],
+  "files": {
+    "document_result": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-02/document-result.json",
+      "bytes": 189541,
+      "sha256": "8a5c358874164db40889acfbb97e188435489c04a6a5ddb61178f7de3b2ed177"
+    },
+    "control_inventory": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-02/control-inventory.json",
+      "bytes": 1034,
+      "sha256": "5e1cfff474a0f2ce972174004e303d53a5fadf25decefc506fdbd0b6716970ef"
+    },
+    "document_outline": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-02/document-outline.json",
+      "bytes": 32046,
+      "sha256": "13f88c3ae7b2bb6f80142f1321e82f24ad39ae64002542282f70a54963f28a4b"
+    },
+    "document_text": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-02/document-text.md",
+      "bytes": 9589,
+      "sha256": "fdbc7e578315fa790fa58a23311d4a278bd3e79cf7b91d573277554f7c55f878"
+    },
+    "receipt": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-02/receipt.json",
+      "bytes": 965,
+      "sha256": "10959869e05702b9666f313901d30e01ec4e0a78446f83fbacc966a558721ca8"
+    }
+  },
+  "error": null
+}

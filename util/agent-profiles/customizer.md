@@ -1,7 +1,6 @@
 ---
 name: customizer
 description: Customizes resumes for specific JDs by drawing from the reference pool (base resume, LinkedIn experience, few-shot examples). Self-measures with count_lines.py and self-trims if over the line ceiling. The optimizer is the same agent re-invoked with grader feedback.
-model: customizer-model
 allowed-tools:
   - read
   - write

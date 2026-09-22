@@ -1,0 +1,31 @@
+{
+  "bridgeVersion": "3.6",
+  "kind": "google-docs-trusted-read-receipt",
+  "status": "complete",
+  "target": {
+    "documentId": "1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "title": "VAL KOMAROV RESUME 2026-09-15",
+    "revisionId": "ANLCKQnrHiKq66HP6NFJ1pc1sj_U5nvUFsRoLaDbKs__i_QCXe-R__Ca0lNKcl7VW8rbM0LYNO0WrZieME7IK9ZYaicNmevGvt6ALi1BdJg",
+    "documentUrl": "https://docs.google.com/document/d/1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "selectedTabId": null
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "controlAwareness": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "affectedParagraphCount": 0,
+    "nativeElementCounts": {
+      "horizontalRule": 8
+    },
+    "preservationRequired": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope."
+  },
+  "warnings": [],
+  "error": null
+}

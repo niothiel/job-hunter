@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,12 +158,25 @@ def run_single_step(
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 
+def _load_runtime(hunter_dir: Path) -> tuple[Paths, PipelineConfig]:
+    """Load configuration and derive paths from its scraper setting."""
+    config = load_config(hunter_dir / "config.json")
+    scraper_dir = None
+    if config.scraper_transport == "filesystem" and config.scraper_repo_path:
+        scraper_dir = Path(config.scraper_repo_path).expanduser()
+        if not scraper_dir.is_absolute():
+            scraper_dir = hunter_dir / scraper_dir
+    paths = Paths.from_hunter_dir(hunter_dir, scraper_dir=scraper_dir)
+    return paths, config
+
+
 def main() -> None:
     args = parse_args()
-    hunter_dir = Path(__file__).resolve().parent
-    paths = Paths.from_hunter_dir(hunter_dir)
+    # __main__.py lives in <workspace>/pipeline; Paths is rooted at the
+    # workspace, not the package directory.
+    hunter_dir = Path(__file__).resolve().parent.parent
+    paths, config = _load_runtime(hunter_dir)
     logger = setup_logging(paths)
-    config = load_config(paths.config_file)
 
     # Apply --dry-run flag (overrides config)
     if args.dry_run:
@@ -344,7 +358,10 @@ def main() -> None:
             return
 
         # Build the graph with checkpointer
-        checkpointer = SqliteSaver.from_conn_string(str(paths.checkpoints_db))
+        checkpoint_conn = sqlite3.connect(
+            str(paths.checkpoints_db), check_same_thread=False
+        )
+        checkpointer = SqliteSaver(checkpoint_conn)
         graph = build_job_graph(checkpointer=checkpointer)
 
         final_states = []
@@ -386,6 +403,8 @@ def main() -> None:
                 logger.error(f"Job {slug} failed: {e}", exc_info=True)
                 notify_error("pipeline", str(e)[:500], slug)
                 stats["errors"] += 1
+
+        checkpoint_conn.close()
 
         # ── Stats (computed from final states) ──
         stats["processed"] = len(final_states)

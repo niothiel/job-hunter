@@ -1,0 +1,57 @@
+{
+  "bridgeVersion": "3.6",
+  "kind": "google-docs-trusted-read",
+  "status": "complete",
+  "outputDir": "/mnt/d/dev/job-hunter/bridge/trusted-read-final",
+  "target": {
+    "documentId": "1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "title": "VAL KOMAROV RESUME 2026-09-15",
+    "revisionId": "ANLCKQlCRQyCQY5xlTv67N3_8FIT9A5sJz9BNCFuOVh2olT7blSt_64gLZcBjZs1hnmkyc22mp42ZcCXYfbyP6_h2l7TEk_J25-qTpBPNTU",
+    "documentUrl": "https://docs.google.com/document/d/1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "selectedTabId": null
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "controlAwareness": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "affectedParagraphCount": 0,
+    "nativeElementCounts": {},
+    "preservationRequired": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope."
+  },
+  "warnings": [],
+  "files": {
+    "document_result": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-final/document-result.json",
+      "bytes": 200839,
+      "sha256": "dce70e8309b4da9ee8a0a32eb6936759a14973b7723943dfd572bf462378faa3"
+    },
+    "control_inventory": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-final/control-inventory.json",
+      "bytes": 1034,
+      "sha256": "0ab780168e7f2e91bdc03d2eb940c901e84127cf2a103a5dc2971068507dde2e"
+    },
+    "document_outline": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-final/document-outline.json",
+      "bytes": 32111,
+      "sha256": "32aea5d56f888676e29f6d54ca7d9a8896130bbaf95668dd3ce1ee214fc7403f"
+    },
+    "document_text": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-final/document-text.md",
+      "bytes": 9654,
+      "sha256": "481324a641be8afd6fac9ce817d543856514e536bcb95821e153e06c3efe6a45"
+    },
+    "receipt": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-final/receipt.json",
+      "bytes": 965,
+      "sha256": "f8401a3c8200ff55d05445e46c8d4862f530c2aa603b47752df998dfea13174f"
+    }
+  },
+  "error": null
+}

@@ -108,6 +108,29 @@ class TestDevinCLIChecker:
         assert "Acme" in prompt
         assert "SF" in prompt
 
+    def test_prompt_includes_search_policy_and_full_job_context(self):
+        llm = FakeLLM()
+        llm.add_response("You are a job filter", '[{"index": 1, "verdict": "YES"}]')
+        checker = DevinCLIChecker(
+            llm=llm, prompt="My custom prompt", model="test", timeout=1, workspace="."
+        )
+        job = {
+            **SAMPLE_JOBS[0],
+            "work_arrangement": "Hybrid",
+            "is_remote": False,
+            "salary": "$250,000 base plus equity",
+            "description": "No security clearance is required.",
+        }
+
+        checker.check_batch([job])
+
+        prompt = llm.calls[0]
+        assert "Pure individual-contributor" in prompt
+        assert '"work_arrangement": "Hybrid"' in prompt
+        assert '"is_remote": false' in prompt
+        assert "$250,000 base plus equity" in prompt
+        assert "No security clearance is required" in prompt
+
     def test_prompt_requests_json(self):
         """The prompt should instruct the LLM to return JSON."""
         llm = FakeLLM()

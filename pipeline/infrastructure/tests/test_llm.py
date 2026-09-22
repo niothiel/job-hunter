@@ -52,6 +52,17 @@ def test_call_llm_custom_model():
     assert "grader-model" in cmd
 
 
+def test_call_llm_default_model_uses_cli_configuration():
+    """The default sentinel must not be sent as an invalid model name."""
+    mock_result = MagicMock(returncode=0, stdout="READY", stderr="")
+
+    with patch("pipeline.infrastructure.devin_cli.subprocess.run", return_value=mock_result) as mock_run, \
+         patch("pipeline.infrastructure.devin_cli.shutil.which", return_value="/usr/local/bin/devin"):
+        assert call_llm("Check readiness", model="default") == "READY"
+
+    assert "--model" not in mock_run.call_args[0][0]
+
+
 def test_call_llm_strips_acp_backend():
     """call_llm should strip ACP_BACKEND from the subprocess env."""
     mock_result = MagicMock()
@@ -274,8 +285,8 @@ def test_call_llm_safe_catches_unexpected_exception():
 # ─── permission_mode tests (ADR-0010) ──────────────────────────────────────
 
 
-def test_call_llm_permission_mode_normal():
-    """call_llm should pass permission_mode='normal' to devin -p."""
+def test_call_llm_permission_mode_normal_maps_to_auto():
+    """The provider-neutral read-only mode maps to Devin CLI's auto mode."""
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_result.stdout = "Result"
@@ -289,7 +300,7 @@ def test_call_llm_permission_mode_normal():
     cmd = mock_run.call_args[0][0]
     assert "--permission-mode" in cmd
     idx = cmd.index("--permission-mode")
-    assert cmd[idx + 1] == "normal"
+    assert cmd[idx + 1] == "auto"
 
 
 def test_call_llm_permission_mode_defaults_dangerous():
@@ -310,7 +321,7 @@ def test_call_llm_permission_mode_defaults_dangerous():
 
 
 def test_call_llm_safe_passes_permission_mode():
-    """call_llm_safe should pass permission_mode through to call_llm."""
+    """call_llm_safe should apply Devin's read-only mode translation."""
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_result.stdout = "Result"
@@ -323,7 +334,7 @@ def test_call_llm_safe_passes_permission_mode():
 
     cmd = mock_run.call_args[0][0]
     idx = cmd.index("--permission-mode")
-    assert cmd[idx + 1] == "normal"
+    assert cmd[idx + 1] == "auto"
 
 
 def test_call_llm_config_path():

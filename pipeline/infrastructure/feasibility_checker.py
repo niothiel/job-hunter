@@ -20,6 +20,7 @@ import abc
 import json
 
 from pydantic import BaseModel, ValidationError, field_validator
+from pipeline.infrastructure.search_policy import SEARCH_POLICY_PROMPT
 
 
 class FeasibilityResult(BaseModel):
@@ -97,7 +98,7 @@ class LLMFeasibilityChecker(FeasibilityChecker):
         lines = [
             f"You are a job filter. For each job below, return a JSON array "
             f"of objects with 'index', 'verdict', and 'rationale' fields. "
-            f"{self.prompt}\n"
+            f"{self.prompt}\n\n{SEARCH_POLICY_PROMPT}\n"
             "The 'index' is the job number (1-based). The 'verdict' must be "
             "PREFERRED, YES, or NO. The 'rationale' is a brief one-sentence "
             "explanation.\n"
@@ -105,11 +106,14 @@ class LLMFeasibilityChecker(FeasibilityChecker):
             'Example: [{"index": 1, "verdict": "PREFERRED", "rationale": "Big Tech engineering leadership."}]\n'
         ]
         for i, job in enumerate(jobs, 1):
-            lines.append(
-                f"{i}. Title: {job.get('title', '?')} | "
-                f"Company: {job.get('company', '?')} | "
-                f"Location: {job.get('location', '?')}"
-            )
+            context = {
+                "title": job.get("title", "?"), "company": job.get("company", "?"),
+                "location": job.get("location", "?"),
+                "work_arrangement": job.get("work_arrangement"),
+                "is_remote": job.get("is_remote"), "salary": job.get("salary"),
+                "description": (job.get("description") or "")[:12000],
+            }
+            lines.append(f"{i}. {json.dumps(context, ensure_ascii=False)}")
         prompt = "\n".join(lines)
         output, error = self.llm(
             prompt, model=self.model, timeout=self.timeout,

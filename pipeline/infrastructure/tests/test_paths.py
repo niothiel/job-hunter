@@ -1,6 +1,8 @@
 """Tests for pipeline.paths.Paths."""
+import json
 from pathlib import Path
 
+from pipeline.__main__ import _load_runtime
 from pipeline.infrastructure.paths import Paths
 
 
@@ -32,3 +34,22 @@ def test_paths_is_frozen(tmp_paths):
 def test_checkpoints_db_equals_jobs_db(tmp_paths):
     """Checkpointer lives in the same DB as jobs data (user decision)."""
     assert tmp_paths.checkpoints_db == tmp_paths.jobs_db
+
+
+def test_runtime_uses_configured_scraper_repo_path(tmp_path, monkeypatch):
+    """The CLI should honor config.json without requiring an exported env var."""
+    scraper_dir = tmp_path / "configured-scraper"
+    (tmp_path / "config.json").write_text(
+        json.dumps({
+            "scraper_transport": "filesystem",
+            "scraper_repo_path": str(scraper_dir),
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("JOB_SCRAPER_DIR", raising=False)
+
+    paths, config = _load_runtime(tmp_path)
+
+    assert config.scraper_repo_path == str(scraper_dir)
+    assert paths.scraper_dir == scraper_dir
+    assert paths.all_jobs_path == scraper_dir / "output" / "all_jobs.json"

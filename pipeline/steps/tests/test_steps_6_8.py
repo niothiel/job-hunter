@@ -443,6 +443,30 @@ def test_step7_two_call_reasoning_error_raises(node_config, fake_llm, tmp_paths)
         step7_grade_resume_node(state, node_config)
 
 
+def test_step7_ineligible_hard_constraint_stops_before_scoring(
+    node_config, fake_llm, tmp_paths
+):
+    job_dir = _setup_drafts(tmp_paths)
+    resume_path = job_dir / "[TBD] resume-v1.md"
+    resume_path.write_text("# Resume", encoding="utf-8")
+    fake_llm.add_response(
+        "Be realistically harsh",
+        "INELIGIBLE: this is a people-management position",
+    )
+    state = JobState(
+        slug="test-co",
+        jd_text="Manage an engineering organization.",
+        resume_versions=[ResumeVersion(version=1, path=resume_path)],
+    )
+
+    result = step7_grade_resume_node(state, node_config)
+
+    assert result["latest_grade"].grade == 0
+    assert result["latest_grade"].per_criterion == []
+    assert resume_path.exists()
+    assert len(fake_llm.calls) == 1
+
+
 # ─── build_can_improve_prompt ────────────────────────────────────────────────
 
 

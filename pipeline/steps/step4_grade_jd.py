@@ -29,6 +29,10 @@ from pipeline.infrastructure.protocol_constants import (
     JD_GRADING_REASONING_PROTOCOL,
     JD_GRADING_SCORING_PROTOCOL,
 )
+from pipeline.infrastructure.search_policy import (
+    SEARCH_POLICY_PROMPT,
+    is_hard_constraint_violation,
+)
 
 
 # ─── Two-call prompt builders ────────────────────────────────────────────────
@@ -66,7 +70,7 @@ def build_jd_reasoning_prompt(
 {linkedin_content}
 ```
 
-Location note: The candidate is based in McLean, VA. Do not flag location as a GAP if the job is in the Washington, DC metro area (including College Park, MD, Arlington, VA, Tysons Corner, VA, Washington, DC, etc.) — these are commutable. Do not flag travel as a GAP if the amount required is below 25%. Do not flag relocation as a GAP; the candidate is willing to relocate for the right role.
+{SEARCH_POLICY_PROMPT}
 
 ## Job
 
@@ -79,7 +83,7 @@ Extract requirements from the JD's qualifications sections only. Assess each aga
 
 Output ONLY valid JSON to stdout (format: {{"per_criterion": [{{"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "..."}}]}}). No reasoning text, no explanations, no markdown fences, no preamble — start with `{{` and end with `}}`. Nothing else. Do NOT write any files. Do NOT compute a score — that is Call 2's job.
 
-If the JD requires security clearance, output CLEARANCE instead of the reasoning JSON."""
+If the JD violates any hard search constraint, output INELIGIBLE followed by a concise reason instead of the reasoning JSON."""
 
 
 def build_jd_scoring_prompt(slug: str, reasoning_json: str) -> str:
@@ -147,10 +151,14 @@ def step4_grade_jd_node(state: JobState, config: RunnableConfig) -> dict:
     if reasoning_error:
         raise RuntimeError(f"{slug}: JD grading reasoning call failed: {reasoning_error}")
 
-    # Check for clearance detection
-    if "CLEARANCE" in (reasoning_output or "").upper():
-        deps.logger.info(f"  {slug}: clearance detected by LLM → trash")
-        jd_grade = JdGrade(grade=0, justification="CLEARANCE", is_clearance=True)
+    # Hard search constraints are LLM-only because context matters (for example,
+    # "no clearance required" must not be rejected by a keyword match).
+    normalized_output = (reasoning_output or "").upper()
+    if is_hard_constraint_violation(reasoning_output):
+        reason = (reasoning_output or "INELIGIBLE").strip()[:500]
+        is_clearance = "CLEARANCE" in normalized_output
+        deps.logger.info(f"  {slug}: hard search constraint violation → trash")
+        jd_grade = JdGrade(grade=0, justification=reason, is_clearance=is_clearance)
         return {"jd_grade": jd_grade}
 
     # Parse reasoning JSON from stdout

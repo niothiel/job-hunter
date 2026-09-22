@@ -1,0 +1,59 @@
+{
+  "bridgeVersion": "3.6",
+  "kind": "google-docs-trusted-read",
+  "status": "complete",
+  "outputDir": "/mnt/d/dev/job-hunter/bridge/trusted-read-01",
+  "target": {
+    "documentId": "1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "title": "VAL KOMAROV RESUME 2026-09-15",
+    "revisionId": "ANLCKQnrHiKq66HP6NFJ1pc1sj_U5nvUFsRoLaDbKs__i_QCXe-R__Ca0lNKcl7VW8rbM0LYNO0WrZieME7IK9ZYaicNmevGvt6ALi1BdJg",
+    "documentUrl": "https://docs.google.com/document/d/1zFbqzTl3bfRej3KO4LRWAXDNZof10Iu9WIJHsmDlHd8",
+    "selectedTabId": null
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "controlAwareness": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "affectedParagraphCount": 0,
+    "nativeElementCounts": {
+      "horizontalRule": 8
+    },
+    "preservationRequired": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope."
+  },
+  "warnings": [],
+  "files": {
+    "document_result": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-01/document-result.json",
+      "bytes": 261710,
+      "sha256": "65793546c21202ba3f86871ffccea717f1cc079a03f85d43005c25dfeb937dce"
+    },
+    "control_inventory": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-01/control-inventory.json",
+      "bytes": 5349,
+      "sha256": "f9c36c8679f7bf4cd2abb96959385e56e2b0711bfd95403a6dcf967838602f14"
+    },
+    "document_outline": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-01/document-outline.json",
+      "bytes": 56793,
+      "sha256": "8d5cd29660be92ae230ed8f02bbb5a63b8154ee809fff9284978e97b662b32fd"
+    },
+    "document_text": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-01/document-text.md",
+      "bytes": 15161,
+      "sha256": "eb7c61588575ee298497883cfb6b4e916a992da31faec0953e4b519337afe4a8"
+    },
+    "receipt": {
+      "path": "/mnt/d/dev/job-hunter/bridge/trusted-read-01/receipt.json",
+      "bytes": 996,
+      "sha256": "41e7efcb3356f411207fe61e5cd33ffc294fa88e46afacb776e7fe41bf2656f1"
+    }
+  },
+  "error": null
+}

@@ -29,6 +29,10 @@ from pipeline.infrastructure.file_ops import rename_with_grade
 from pipeline.infrastructure.llm_interface import get_deps, parse_llm_json
 from pipeline.infrastructure.paths import Paths
 from pipeline.infrastructure.protocol_constants import GRADING_REASONING_PROTOCOL, GRADING_SCORING_PROTOCOL
+from pipeline.infrastructure.search_policy import (
+    SEARCH_POLICY_PROMPT,
+    is_hard_constraint_violation,
+)
 from pipeline.infrastructure.state import JobState, ResumeGrade
 
 
@@ -48,7 +52,7 @@ def build_reasoning_prompt(
 
 {GRADING_REASONING_PROTOCOL}
 
-Location note: The candidate is based in McLean, VA. Do not flag location as a GAP if the job is in the Washington, DC metro area (including College Park, MD, Arlington, VA, Tysons Corner, VA, Washington, DC, etc.) — these are commutable. Do not flag travel as a GAP if the amount required is below 25%. Do not flag relocation as a GAP; the candidate is willing to relocate for the right role.
+{SEARCH_POLICY_PROMPT}
 
 Read the resume at {resume_path} and the JD at {jd_path}.
 
@@ -56,7 +60,7 @@ Extract requirements from qualifications sections only. Assign verdicts (DIRECT_
 
 Output ONLY valid JSON to stdout (format: {{"per_criterion": [{{"requirement": "...", "tier": "core", "assessment": "DIRECT_HIT", "comment": "..."}}]}}). No reasoning text, no explanations, no markdown fences, no preamble — start with `{{` and end with `}}`. Nothing else. Do NOT write any files. Do NOT compute a score — that is Call 2's job.
 
-If the JD requires security clearance, output CLEARANCE instead of the reasoning JSON."""
+If the JD violates any hard search constraint, output INELIGIBLE followed by a concise reason instead of the reasoning JSON."""
 
 
 def build_scoring_prompt(
@@ -175,9 +179,10 @@ def step7_grade_resume_node(state: JobState, config: RunnableConfig) -> dict:
             f"{slug}: resume grading reasoning call failed: {reasoning_error}"
         )
 
-    # Check for clearance detection
-    if "CLEARANCE" in reasoning_output.upper():
-        deps.logger.info(f"  {slug}: clearance detected during grading → trash")
+    # Step 4 normally catches this; retain the same guard if a resume is graded
+    # independently or constraints changed after JD grading.
+    if is_hard_constraint_violation(reasoning_output):
+        deps.logger.info(f"  {slug}: hard search constraint violation during grading → trash")
         resume_grade = ResumeGrade(grade=0, per_criterion=[])
         # Still need to handle the resume file — leave ungraded
         return {"latest_grade": resume_grade}

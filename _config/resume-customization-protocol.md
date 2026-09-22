@@ -7,6 +7,8 @@
 
 I am a hands-on Distinguished Software Engineer targeting Staff, Principal, Distinguished, and equivalent senior individual-contributor roles at strong product, platform, security, and AI companies. Tailor applications toward backend, platform, AppSec/SCA, cloud infrastructure, distributed systems, developer tooling, workflow automation, and agentic AI work.
 
+Search constraints are authoritative: pure IC roles; remote roles that explicitly allow work from Virginia or hybrid roles in Northern Virginia/Washington, DC; no Maryland hybrid roles and no relocation; no clearance-required roles; minimum $300,000 annual total compensation, while retaining roles whose total compensation is unknown. Optimize primarily for mission and domain fit.
+
 When a JD emphasizes a specific theme, draw from the relevant part of my background:
 - **AppSec/SCA:** Lead with Heeler's multi-ecosystem remediation engine, CycloneDX graph traversal, minimum-safe-upgrade calculation, and vulnerability remediation
 - **AI/agentic systems:** Lead with Heeler's LangGraph and AWS Bedrock Fix Now feature, repository-scoped agent memory, package-manager proxy, execution tracking, and concurrency controls

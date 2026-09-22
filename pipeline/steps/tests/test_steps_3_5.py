@@ -82,6 +82,21 @@ def test_step4_grade_jd_clearance(node_config, fake_llm, tmp_paths):
     assert result["jd_grade"].grade == 0
 
 
+def test_step4_grade_jd_ineligible_hard_constraint(node_config, fake_llm, tmp_paths):
+    _create_source_files(tmp_paths)
+    fake_llm.add_response(
+        "JD Grading Reasoning Protocol",
+        "INELIGIBLE: hybrid role is based in Maryland",
+    )
+    state = JobState(slug="maryland-co", jd_text="Hybrid in Bethesda, Maryland")
+
+    result = step4_grade_jd_node(state, node_config)
+
+    assert result["jd_grade"].grade == 0
+    assert result["jd_grade"].is_clearance is False
+    assert "Maryland" in result["jd_grade"].justification
+
+
 def test_step4_grade_jd_llm_error_raises(node_config, fake_llm, tmp_paths):
     """LLM failure should raise (caught by orchestrator's error boundary)."""
     _create_source_files(tmp_paths)
@@ -235,3 +250,10 @@ def test_build_jd_reasoning_prompt_wraps_jd_content():
     prompt = build_jd_reasoning_prompt("co", jd, "base resume", "linkedin")
     assert "<JD_CONTENT>" in prompt
     assert "</JD_CONTENT>" in prompt
+
+
+def test_build_jd_reasoning_prompt_includes_search_policy():
+    prompt = build_jd_reasoning_prompt("co", "JD", "base resume", "linkedin")
+    assert "Pure individual-contributor" in prompt
+    assert "Maryland is not eligible" in prompt
+    assert "INELIGIBLE" in prompt

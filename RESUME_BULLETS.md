@@ -226,3 +226,250 @@ vulnerabilities and answers CI questions — the "Fix Now" feature's engine.*
 ## Open questions for you
 1. Anything else you're proud of that isn't reflected here (a specific integration, a customer
    escalation you resolved, an outage you led the response on) that I should add?
+
+---
+
+# Resume / LinkedIn bullet bank — CardCast
+
+Source: repository code, documentation, benchmarks, and Git history across `mtg` (536 commits on
+the current branch, April 2024 – September 2026; nearly the entire history authored by Val).
+CardCast (cardcast.gg) is a production, browser-based platform for playing paper Magic: The
+Gathering remotely. It combines real-time voice/video, synchronized multiplayer game state,
+computer-vision card recognition, and a public content/marketing site across a FastAPI +
+SQLAlchemy backend, React/TypeScript frontend, LiveKit/WebRTC media layer, ONNX Runtime inference,
+Astro site, and Terraform-managed infrastructure.
+
+Bullets are grouped by theme, written liberally like the Heeler bank above, and grounded in code,
+commits, or checked-in benchmark results. Trim and tailor per role; remove commit hashes before
+pasting into a resume.
+
+**Role framing used for the resume:** Founder / Principal Software Engineer. The repository strongly
+supports end-to-end founder-level ownership and near-solo authorship, but the title itself is an
+inference; use Creator / Independent Software Engineer if that is more personally accurate.
+
+---
+
+## 0. Founder / 0-to-1 Product Ownership
+
+- Founded and independently built **cardcast.gg**, taking it from a SIFT-based computer-vision
+  experiment to a deployed, no-signup browser platform for remote tabletop gaming; owned product
+  strategy, ML research, backend, frontend, infrastructure, operations, and launch across a
+  536-commit current history. (`c94bad0`–`5abb3d6`)
+- Designed and shipped the product end-to-end: live voice/video, authoritative multiplayer game
+  state, interactive card recognition, virtual cards, gameplay tooling, and a public marketing and
+  documentation site. (`beb98d7`, `22ada35`, `2e5969a`, `9172ea0`, `2f6f2b7`)
+- Defined the product around an underserved use case—distributed Commander playgroups dissatisfied
+  with existing card detection—and personally drove competitive research, positioning, roadmap,
+  implementation, deployment, weekly dogfooding, and launch planning. (`docs/MARKETING.md`,
+  `docs/COMPETITION.md`, `docs/LAUNCH_PLAN.md`, `3a1532d`)
+- Progressed the core differentiator through multiple technical generations—classical SIFT
+  matching, hybrid detection, learned DINO embeddings, vector retrieval, a standalone inference
+  service, and reusable recognition/catalog libraries—while keeping a playable product shipping.
+  (`b9c0652`, `d9aca68`, `91a2c5a`, `7cad8d2`, `73a1423`, `e9e2bae`)
+
+## 1. Computer Vision, ML & Card Recognition
+
+- Architected a reusable ONNX Runtime computer-vision pipeline that detects cards, batches DINO
+  embeddings, resolves top-K matches, handles rotated cards, and reports stage-level latency;
+  deployed the shared implementation across both the main application and standalone inference
+  service. (`9e59372`, `73a1423`, `8986a07`, `5abb3d6`)
+- Built a validated four-artifact recognition bundle spanning detector and embedder ONNX models,
+  embedding matrices, and card metadata, with model-checksum and embedding-dimension validation to
+  reject incompatible assets before inference. (`73a1423`, `1cd69a2`)
+- Developed an end-to-end catalog pipeline that incrementally synchronizes Scryfall metadata and
+  card images, performs multithreaded downloads with connection pooling, verifies SHA-256
+  checksums, and generates deterministic batched embedding indexes. (`db83ed7`, `6a4eef2`,
+  `f099a8d`, `1cd69a2`)
+- Designed a reloadable in-memory card database that atomically publishes fully validated snapshots
+  to concurrent readers, preventing partial or corrupt catalog updates while supporting normalized
+  name, printing, and Oracle-ID lookup. (`76b54e6`)
+- Re-architected recognition around standalone typed catalog and recognition libraries, migrating
+  application consumers and tests, deleting 3,600+ lines of legacy detection/classification code,
+  and removing OpenCV and FAISS from the application runtime. (`e9e2bae`, `8986a07`, `f7be60c`,
+  `14a5458`, `59c32e0`, `22832f9`)
+- Built a reproducible benchmark harness spanning backend single-/multi-threaded CPU, CUDA, browser
+  single-/multi-threaded WASM, and WebGPU, with controlled warmups, raw per-run samples, hardware
+  capture, and generated reports. (`26b9d0d`, `b19cce8`, `comprehensive_benchmark/`)
+- Created and curated a real-world evaluation corpus of 178 labeled gameplay frames and 2,205 card
+  crops, with video ingestion, machine-assisted labeling, human review, regression comparison, and
+  detector/classifier dataset tooling. (`benchmark` submodule: `10b050c`, `4525a08`, `3cb8382`,
+  `dc745ea`, `c4065f0`, `ab53b76`)
+- Benchmarked DINO, ViT, EfficientNet, and patch-similarity approaches using top-1/top-5/top-10
+  accuracy, mean rank, and latency, identifying a DINOv3 art-crop configuration with 55.2% top-1
+  and 78.0% top-10 accuracy at 53.0 ms/image. (`benchmark` submodule: `310e2d5`)
+- Extended the benchmark system to physical mobile devices over LAN/HTTPS with crash-safe partial
+  result persistence; measured the production detector at 27.0 ms median on iPhone WebGPU versus
+  166.6 ms on single-threaded WASM across 50 runs. (`b19cce8`,
+  `comprehensive_benchmark/results/phone/REPORT.md`)
+- Benchmarked alternative detector architectures and demonstrated that FP16 YOLO segmentation ran
+  at 10.4 ms median wall time on an RTX 3070—4.2x faster than the reliable DINO baseline—while
+  producing instance masks suitable for perspective correction. (`fc33863`,
+  `docs/PERFORMANCE_PLAN.md`)
+- Added recognition resilience for difficult inputs, including full-frame fallback, center-point
+  filtering, 180-degree card orientation, messy backgrounds, large-card handling, and regressions
+  for blank frames and false positives. (`1196ba2`, `f7be60c`)
+
+## 2. Real-Time Media Platform (WebRTC / LiveKit)
+
+- Architected and executed a staged migration from an N-squared peer-to-peer WebRTC mesh to a
+  LiveKit SFU, extracting a transport-agnostic media interface, preserving backward-compatible mesh
+  rooms, and making transport selection authoritative per game. (`d6e7143`, `58505dd`, `f623f96`,
+  `cdc88a0`)
+- Secured LiveKit access with 12-hour, room-scoped JWTs derived from signed session identity and
+  verified against persisted game membership, preventing clients from minting credentials for
+  arbitrary users or rooms. (`75ec570`, `0f99e7c`)
+- Implemented adaptive streaming, dynacast, VP8 simulcast, reconnection backoff, and
+  duplicate-identity handling while preserving raw 1920x1080 owner-camera frames for remote card
+  recognition instead of processing dynamically downscaled subscriber video. (`f623f96`,
+  `4a13359`)
+- Added configurable LiveKit recording across participant, room-composite, and raw-track modes with
+  S3-compatible storage, fail-open behavior, automatic room provisioning, and lifecycle cleanup.
+  (`605a526`)
+- Verified the SFU migration end to end across authentication, two-client media, adaptive-layer
+  switching, 1080p owner capture, WebSocket-failure fallback, and legacy mesh coexistence;
+  documented a three-player, 25-fps session carrying 5.68 GB upstream and 6.52 GB downstream.
+  (`cdc88a0`, `docs/LIVEKIT.md`)
+
+## 3. Multiplayer Backend & Real-Time State
+
+- Designed and built the authoritative backend for an eight-player real-time game platform,
+  persisting gameplay state in SQLAlchemy and synchronizing life totals, turns, timers, counters,
+  commander damage/tax, eliminations, detections, and virtual cards over WebSockets. (`22ada35`,
+  `966fbb2`, `2308e39`, `c582e4a`, `b584d02`, `704db9f`)
+- Separated real-time connection management from domain logic into dedicated WebSocket and game
+  manager layers with initial-state catch-up, persisted event history, owner election,
+  duplicate-session replacement, targeted signaling, and room-wide broadcasts. (`22ada35`,
+  `ced463f`, `704db9f`)
+- Introduced discriminated Pydantic contracts for 24 inbound and 14 outbound WebSocket variants,
+  published them through OpenAPI for generated TypeScript types, and rolled out monitor-only
+  validation to detect contract drift without disrupting existing traffic. (`bee32a3`)
+- Hardened long-lived connections with three-second server keepalives, ten-second liveness
+  timeouts, client-side reconnect detection, safe connection replacement, and explicit close codes
+  for superseded sessions and completed games. (`87e3333`, `297ddb7`)
+- Implemented automatic game expiration and coordinated shutdown across database state, background
+  threads, the asyncio loop, WebSocket broadcasts, and LiveKit rooms to prevent stale sessions and
+  recording resources from remaining active indefinitely. (`d6d53f0`, `562f436`, `605a526`)
+
+## 4. Frontend & Product Experience
+
+- Built the real-time gameplay experience across React/TypeScript and FastAPI: life totals, turn
+  order and timing, commander damage and tax, poison/experience/radiation counters, monarch and
+  initiative status, player elimination, dice/coin rolls, and game-owner controls. (`22ada35`,
+  `26ad3d9`, `84635c2`, `4c1aee6`, `6d60145`, `b584d02`)
+- Developed an interactive card-recognition UX that maps detection geometry across cropped,
+  scaled, and rotated video and supports region/whole-frame scans, hover previews, persistent
+  pinning, grouped and de-duplicated history, card rulings, and selectable contour overlays.
+  (`2e5969a`, `2aebcd6`, `024f835`, `bc8bbd1`, `9b8f3fb`, `c0f48b9`, `aeb4c65`)
+- Designed and shipped synchronized virtual cards and tokens that players can drag, resize, rotate,
+  pin, and delete over live video, persisting state through the game WebSocket and dynamically
+  selecting image resolution from rendered size. (`9172ea0`, `704db9f`, `1a7c75e`, `044831d`)
+- Improved long-running-game usability with persistent camera/microphone preferences, camera
+  rotation, microphone disconnect versus mute, per-player volume controls, talking indicators,
+  responsive table layouts, and resizable player strips/sidebars. (`61931d1`, `d05de8c`,
+  `2e73f7f`, `f5e69a8`, `2c8d52f`, `3971cd7`)
+- Modernized the frontend through React 19, Mantine 9, React Router 7, TypeScript, Vite, and ESLint
+  upgrades, protected by mocked-backend Playwright interaction and pixel-diff regression tests for
+  the media-heavy game screen. (`27a2870`, `90b40dc`, `95b3a45`, `7d4ac63`, `b1f3229`,
+  `a6c814d`)
+- Created shared design tokens consumed by both the Mantine application and Astro site, maintaining
+  consistent color, typography, spacing, and semantic states across independent rendering stacks.
+  (`4e7f3ce`, `79a1879`)
+- Built developer tooling for rapid media and recognition iteration: an interactive detection lab,
+  mocked WebSocket/API fixtures, fake-camera browser tests, deterministic multiplayer game seeds,
+  prerecorded video feeds, and timeline scrubbing for reproducible demos. (`4eccac0`, `27a2870`,
+  `1267a53`, `35612dd`)
+
+## 5. Reliability, Security & Observability
+
+- Protected API availability from compute-heavy vision workloads by first isolating inference in a
+  managed subprocess pool and then extracting it into a standalone FastAPI service with readiness
+  checks, typed responses, stage timings, timeouts, and CPU/GPU deployment paths. (`1173bed`,
+  `dfebca1`, `5abb3d6`)
+- Designed priority-aware inference backpressure with a CPU-sized bounded semaphore: best-effort
+  auto-scans shed immediately with HTTP 429, while user-initiated scans wait up to five seconds
+  before receiving a retryable 503. (`eba8fa9`)
+- Built a reusable circuit breaker for remote inference with closed/open/half-open recovery,
+  configurable thresholds, and correct control-flow exception handling; production opens after
+  three failures and probes recovery after 15 seconds. (`dfebca1`)
+- Implemented circuit breakers, outbound-request timeouts, reconnecting WebSockets, keepalives, and
+  retry/backoff behavior across external deck services, real-time game state, and media transport.
+  (`87e3333`, `875ca0d`, `297ddb7`, `03016e6`)
+- Instrumented the stack with Sentry error reporting, browser tracing/session replay, backend log
+  capture, domain-proxied PostHog analytics, structured access latency, per-stage inference timing,
+  and Git-derived production version reporting. (`3830ce6`, `8024e7c`, `658ffcc`, `f850fdd`,
+  `4e7f3ce`, `d4edfcd`)
+- Hardened internet-facing traffic with trusted-host validation, HTTPS redirects, Cloudflare-only
+  forwarded-header trust, malformed-header rejection, image-payload log redaction, and
+  production-disabled development routes. (`03016e6`)
+- Moved deployment secrets into ignored environment configuration and patched known `urllib3` and
+  `minimatch` CVEs. (`ab21ce9`, `ffdc8f1`, `8d91116`)
+
+## 6. Infrastructure, Deployment & Launch
+
+- Provisioned and operated cardcast.gg on Oracle Cloud with Terraform, defining a 4-OCPU, 24-GB
+  RAM, 200-GB ARM instance with automated recovery and compute monitoring; containerized the
+  FastAPI, React, and Astro application for reproducible deployment. (`407bede`, `972f36d`,
+  `c5aaaa9`)
+- Built a multi-stage production image that compiles two TypeScript frontends, composes their static
+  output, installs locked Python dependencies and shared libraries, embeds Git build metadata, and
+  ships a single deployable FastAPI container. (`2f6f2b7`, `c5aaaa9`)
+- Separated compute-intensive recognition into a standalone FastAPI inference service with a
+  read-only model bundle, health endpoint, Docker packaging, NVIDIA GPU passthrough, restart policy,
+  and a 20-GB memory limit. (`7cad8d2`, `df6843b`, `8f5ea68`, `5abb3d6`)
+- Provisioned an AWS ML research environment in Terraform with 16 vCPUs, 128 GB RAM, and 300 GB
+  storage, remote S3-backed state, and SSH restricted dynamically to the developer's current /32
+  address. (`1ff41d7`)
+- Built and launched an Astro marketing/content site alongside the React application, including
+  responsive landing pages, documentation, release blog, sitemap/robots metadata, FAQ, competitor
+  comparison, and a frictionless create-game path. (`2f6f2b7`, `3a1532d`, `a571b68`, `b97b211`)
+- Created an SEO-targeted SpellTable-alternative page and product communication loop spanning
+  release posts, Discord/community calls to action, in-product sharing/feedback paths, analytics,
+  and a unified visual identity. (`b97b211`, `971b2ff`, `e336794`, `e1e21a0`, `8acde8a`,
+  `79a1879`)
+
+## 7. Engineering Practices
+
+- Established a comprehensive quality gate spanning Ruff linting/formatting, mypy static analysis,
+  Python unit tests, frontend ESLint and TypeScript compilation, and Playwright interaction and
+  visual-regression testing. (`c864e26`, `7806e53`, `27a2870`, `d109a60`)
+- Built Playwright visual-regression coverage around multiplayer games, settings, card history,
+  onboarding, and overlays to support major React, Mantine, Vite, and router upgrades safely.
+  (`27a2870`, `562f436`)
+- Consolidated five Python projects under shared Ruff/mypy configuration, locked dependencies,
+  typed package boundaries, and one `make check` workflow covering the web app, inference service,
+  catalog, recognition library, and model tooling. (`c4a8223`, `187caef`)
+- Used atomic streaming downloads (`fsync` + filesystem replacement), checksum validation, and
+  immutable snapshot publication to ensure interrupted catalog/model updates cannot expose partial
+  assets to production readers. (`76b54e6`)
+
+---
+
+## Recommended five-bullet resume cut
+
+- Founded and independently built cardcast.gg, evolving a computer-vision prototype into a
+  production browser platform for remote tabletop gaming with live voice/video, synchronized game
+  state, card recognition, and virtual cards.
+- Migrated real-time media from an N-squared WebRTC mesh to a LiveKit SFU with room-scoped JWTs,
+  adaptive streaming, simulcast/dynacast, reconnect handling, recording, and preserved 1080p source
+  frames for recognition.
+- Architected a reusable ONNX Runtime recognition platform spanning card detection, batched DINO
+  embeddings, top-K retrieval, validated model bundles, incremental Scryfall synchronization, and
+  atomic hot-reloaded catalogs.
+- Built a six-platform CPU/CUDA/WASM/WebGPU benchmark suite and 178-frame/2,205-crop evaluation
+  corpus; measured 27.0 ms median detector inference on iPhone WebGPU and identified a 10.4 ms GPU
+  segmentation architecture.
+- Delivered and operated the full product stack across FastAPI, SQLAlchemy, React/TypeScript,
+  WebSockets, Astro, Docker, Terraform, Oracle Cloud, Sentry, PostHog, and Playwright.
+
+## Notes / scope caveats
+
+- “Founder / Principal Software Engineer” is inferred from near-exclusive authorship and complete
+  product ownership; change the title if that does not match how you represent the project.
+- The repository supports production deployment, active dogfooding, and a public launch, but does
+  not provide defensible active-user, revenue, availability, conversion, or traffic metrics.
+- Keep security claims specific to the implemented controls above; do not generalize them into a
+  broad security/compliance claim.
+- Auto-scan and backpressure exist, but the current frontend deliberately keeps user auto-scan
+  disabled. Avoid claiming that always-on detection is currently shipped.
+- The current WebSocket registry is process-local and persistence uses SQLite; avoid describing the
+  backend as distributed or horizontally scalable.
